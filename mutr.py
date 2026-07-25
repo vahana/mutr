@@ -3,6 +3,7 @@
 # requires-python = "==3.13.*"
 # dependencies = [
 #   "PyQt6>=6.6.0",
+#   "yt-dlp>=2024.1.0",
 # ]
 # ///
 
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSlider, QStatusBar, QVBoxLayout, QWidget,
 )
 
-from dialogs import PitchDialog, SplitDialog
+from dialogs import DownloadDialog, PitchDialog, SplitDialog
 from loop_bar import LoopBar, SeekSlider, _ms_to_str
 from project import load_prefs, load_project, save_prefs, save_project, update_recent
 from track import TrackData, TrackRow, track_color
@@ -106,6 +107,7 @@ class MainWindow(QMainWindow):
         self._save_proj_btn = QPushButton("Save Project")
         self._save_as_btn = QPushButton("Save As…")
         self._open_src_btn = QPushButton("Open File…")
+        self._download_btn = QPushButton("⬇ Download…")
         self._recent_btn = QPushButton("Recent ▾")
         self._recent_btn.setFixedWidth(90)
         self._recent_menu = QMenu(self)
@@ -120,7 +122,7 @@ class MainWindow(QMainWindow):
         self._help_btn.setFixedWidth(28)
 
         for w in [self._new_btn, self._open_proj_btn, self._save_proj_btn,
-                  self._save_as_btn, self._open_src_btn, self._recent_btn]:
+                  self._save_as_btn, self._open_src_btn, self._download_btn, self._recent_btn]:
             row.addWidget(w)
         row.addStretch()
         row.addWidget(self._video_btn)
@@ -183,6 +185,7 @@ class MainWindow(QMainWindow):
         self._save_proj_btn.clicked.connect(self._save_project)
         self._save_as_btn.clicked.connect(self._save_project_as)
         self._open_src_btn.clicked.connect(self._open_source_file)
+        self._download_btn.clicked.connect(self._open_downloader)
         self._help_btn.clicked.connect(self._show_help)
         self._play_btn.clicked.connect(self._toggle_play)
         self._stop_btn.clicked.connect(self._stop)
@@ -283,6 +286,8 @@ class MainWindow(QMainWindow):
         self._loop_btn.setEnabled(False)
         self._loop_btn.setChecked(False)
         self._time_lbl.setText("0:00 / 0:00")
+        self._solo_track = -1
+        self._pre_solo_mutes = []
 
     # ── playback sync ─────────────────────────────────────────────────────────
 
@@ -392,6 +397,9 @@ class MainWindow(QMainWindow):
     def _show_video_window(self):
         self._video_window.show()
         self._video_window.raise_()
+        QApplication.processEvents()
+        if self._players:
+            self._players[0][0].setVideoOutput(self._video_window.video_widget)
 
     # ── loop / segment ────────────────────────────────────────────────────────
 
@@ -519,6 +527,18 @@ class MainWindow(QMainWindow):
                 color=track_color(idx),
             )
             self._add_track(data, is_source=False)
+
+    # ── download ──────────────────────────────────────────────────────────────
+
+    def _open_downloader(self):
+        start_dir = self._prefs.get("last_audio_dir", str(Path.home() / "Downloads"))
+        dlg = DownloadDialog(start_dir=start_dir, parent=self)
+        dlg.file_ready.connect(self._on_download_done)
+        dlg.exec()
+
+    def _on_download_done(self, path: str):
+        self._prefs["last_audio_dir"] = str(Path(path).parent)
+        self._open_source_file(path)
 
     # ── project ───────────────────────────────────────────────────────────────
 
