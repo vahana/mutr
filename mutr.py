@@ -198,13 +198,11 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
 
         self._file_menu = QMenu(self)
-        self._file_menu.addAction("New", self._new_project)
         self._file_menu.addAction("Open Project…", self._open_project)
         self._file_menu.addSeparator()
         self._file_menu.addAction("Save Project", self._save_project)
         self._file_menu.addAction("Save As…", self._save_project_as)
         self._file_menu.addSeparator()
-        self._file_menu.addAction("Open File…", self._open_source_file)
         self._file_menu.addAction("+ Add Track…", self._add_track_clicked)
         self._file_menu.addAction("Download…", self._open_downloader)
         self._file_menu.addSeparator()
