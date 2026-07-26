@@ -790,10 +790,16 @@ class MainWindow(QMainWindow):
         else:
             self._write_project(self._current_project)
 
+    def _default_project_name(self) -> str:
+        if self._tracks:
+            return self._tracks[0].name
+        return "My Project"
+
     def _save_project_as(self):
         proj_dir = self._project_dir()
+        default_name = self._default_project_name()
         if proj_dir is None:
-            name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text="My Project")
+            name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=default_name)
             if not ok or not (name := name.strip()):
                 return
             projects_dir = Path.home() / ".mutr" / "projects"
@@ -811,7 +817,7 @@ class MainWindow(QMainWindow):
             self._show_tracks_page()
             self.setWindowTitle(f"mutr — {name}")
             return
-        name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=proj_dir.name)
+        name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=default_name)
         if not ok or not (name := name.strip()):
             return
         new_dir = proj_dir.parent / name
