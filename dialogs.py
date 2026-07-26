@@ -133,6 +133,7 @@ class SplitDialog(QDialog):
         model_row.addWidget(QLabel("Model:"))
         self._model_cb = QComboBox()
         self._model_cb.addItems([label for _, label in _MODELS])
+        self._model_cb.setCurrentIndex(2)
         model_row.addWidget(self._model_cb, stretch=1)
         layout.addLayout(model_row)
 
@@ -140,7 +141,7 @@ class SplitDialog(QDialog):
         shift_row.addWidget(QLabel("Quality:"))
         self._shifts_sb = QSpinBox()
         self._shifts_sb.setRange(0, 20)
-        self._shifts_sb.setValue(0)
+        self._shifts_sb.setValue(10)
         self._shifts_sb.setToolTip("Higher = better separation quality but slower. 0 = fast, 10 = paper default.")
         shift_row.addWidget(self._shifts_sb)
         shift_row.addStretch()

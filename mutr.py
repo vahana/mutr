@@ -28,7 +28,7 @@ from loop_bar import LoopBar, SeekSlider, _ms_to_str
 from project import load_prefs, load_project, save_prefs, save_project, update_recent
 from track import TrackData, TrackRow, track_color
 
-_STEM_ORDER = ["vocals", "drums", "bass", "other"]
+_STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
 
 
 class VideoWindow(QMainWindow):
@@ -695,10 +695,9 @@ class MainWindow(QMainWindow):
 
     def _on_stems_done(self, stems: dict):
         self.statusBar().showMessage(f"Stems ready: {', '.join(stems.keys())}", 5000)
-        for name in _STEM_ORDER:
-            path = stems.get(name)
-            if not path:
-                continue
+        ordered = sorted(stems.keys(), key=lambda k: _STEM_ORDER.index(k) if k in _STEM_ORDER else len(_STEM_ORDER))
+        for name in ordered:
+            path = stems[name]
             idx = len(self._tracks)
             data = TrackData(
                 name=name.capitalize(),
