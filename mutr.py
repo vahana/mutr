@@ -7,6 +7,7 @@
 # ]
 # ///
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow):
         self._save_proj_btn = QPushButton("Save Project")
         self._save_as_btn = QPushButton("Save As…")
         self._open_src_btn = QPushButton("Open File…")
+        self._add_track_btn = QPushButton("+ Track")
         self._download_btn = QPushButton("⬇ Download…")
         self._recent_btn = QPushButton("Recent ▾")
         self._recent_btn.setFixedWidth(90)
@@ -122,7 +124,8 @@ class MainWindow(QMainWindow):
         self._help_btn.setFixedWidth(28)
 
         for w in [self._new_btn, self._open_proj_btn, self._save_proj_btn,
-                  self._save_as_btn, self._open_src_btn, self._download_btn, self._recent_btn]:
+                  self._save_as_btn, self._open_src_btn, self._add_track_btn,
+                  self._download_btn, self._recent_btn]:
             row.addWidget(w)
         row.addStretch()
         row.addWidget(self._video_btn)
@@ -185,6 +188,7 @@ class MainWindow(QMainWindow):
         self._save_proj_btn.clicked.connect(self._save_project)
         self._save_as_btn.clicked.connect(self._save_project_as)
         self._open_src_btn.clicked.connect(self._open_source_file)
+        self._add_track_btn.clicked.connect(self._add_track_clicked)
         self._download_btn.clicked.connect(self._open_downloader)
         self._help_btn.clicked.connect(self._show_help)
         self._play_btn.clicked.connect(self._toggle_play)
@@ -245,6 +249,9 @@ class MainWindow(QMainWindow):
         row.volume_changed.connect(self._on_volume_changed)
         row.pitch_shift_requested.connect(self._on_pitch_shift_requested)
         row.split_requested.connect(self._on_split_requested)
+        row.remove_requested.connect(self._on_remove_track_requested)
+        row.name_changed.connect(self._on_track_renamed)
+        row.show_in_finder_requested.connect(self._on_show_in_finder)
         row.solo_requested.connect(self._on_solo)
         self._track_rows.append(row)
         self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
@@ -490,6 +497,42 @@ class MainWindow(QMainWindow):
         for i, row in enumerate(self._track_rows):
             row.set_solo_active(i == self._solo_track)
 
+    def _on_remove_track_requested(self, track_idx: int):
+        if len(self._tracks) <= 1:
+            return
+        name = self._tracks[track_idx].name
+        reply = QMessageBox.question(
+            self, "Remove Track", f"Remove \"{name}\"?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        p, _ = self._players[track_idx]
+        p.stop()
+        p.setSource(QUrl())
+        del self._players[track_idx]
+        del self._tracks[track_idx]
+        row = self._track_rows.pop(track_idx)
+        row.cleanup()
+        self._tracks_layout.removeWidget(row)
+        row.deleteLater()
+        for i, r in enumerate(self._track_rows):
+            r._idx = i
+        if self._solo_track == track_idx:
+            for i, r in enumerate(self._track_rows):
+                r.set_solo_active(False)
+            self._solo_track = -1
+            self._pre_solo_mutes = []
+        elif self._solo_track > track_idx:
+            self._solo_track -= 1
+
+    def _on_track_renamed(self, track_idx: int, new_name: str):
+        self._tracks[track_idx].name = new_name
+
+    def _on_show_in_finder(self, track_idx: int):
+        file_path = self._tracks[track_idx].file
+        subprocess.run(["open", "-R", file_path])
+
     # ── pitch shift (via dialog) ──────────────────────────────────────────────
 
     def _on_pitch_shift_requested(self, track_idx: int):
@@ -501,7 +544,6 @@ class MainWindow(QMainWindow):
     def _reload_track_source(self, track_idx: int, new_path: str, pitch_baked: int):
         data = self._tracks[track_idx]
         data.file = new_path
-        data.source_file = new_path
         data.pitch_baked = pitch_baked
         pos = self._current_pos()
         was_playing = self._is_playing()
@@ -584,6 +626,20 @@ class MainWindow(QMainWindow):
         data = TrackData(name="Full Mix", file=path, source_file=path, color=track_color(0))
         self._add_track(data, is_source=True)
         self._update_recent(path)
+
+    def _add_track_clicked(self):
+        start_dir = self._prefs.get("last_audio_dir", "")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add Audio / Video Track", start_dir,
+            "Audio/Video (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.flac *.m4a *.ogg)",
+        )
+        if not path:
+            return
+        self._prefs["last_audio_dir"] = str(Path(path).parent)
+        idx = len(self._tracks)
+        name = Path(path).stem
+        data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
+        self._add_track(data)
 
     def _save_project(self):
         if self._current_project is None:

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QMenu, QPushButton, QSlider, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QWidget,
 )
 
 _TRACK_COLORS = [
@@ -166,6 +166,9 @@ class TrackRow(QWidget):
     pitch_shift_requested = pyqtSignal(int)
     split_requested = pyqtSignal(int)
     solo_requested = pyqtSignal(int)
+    remove_requested = pyqtSignal(int)
+    name_changed = pyqtSignal(int, str)
+    show_in_finder_requested = pyqtSignal(int)
 
     _ROW_H = 52
 
@@ -183,7 +186,9 @@ class TrackRow(QWidget):
 
         self._name_lbl = QLabel(data.name)
         self._name_lbl.setFixedWidth(90)
+        self._name_lbl.mouseDoubleClickEvent = self._start_rename
         layout.addWidget(self._name_lbl)
+        self._name_edit = None
 
         self._waveform = _WaveformWidget(data.color)
         layout.addWidget(self._waveform, stretch=1)
@@ -248,16 +253,48 @@ class TrackRow(QWidget):
     # ── context menu ──────────────────────────────────────────────────────────
 
     def contextMenuEvent(self, event):
-        if not self._is_source:
-            return
         menu = QMenu(self)
         pitch_act = menu.addAction("Pitch Shift…")
-        split_act = menu.addAction("Split Stems…")
+        split_act = menu.addAction("Split Stems…") if self._is_source else None
+        menu.addSeparator()
+        finder_act = menu.addAction("Show in Finder")
+        menu.addSeparator()
+        remove_act = menu.addAction("Remove Track")
         act = menu.exec(event.globalPos())
+        if act is None:
+            return
         if act == pitch_act:
             self.pitch_shift_requested.emit(self._idx)
         elif act == split_act:
             self.split_requested.emit(self._idx)
+        elif act == finder_act:
+            self.show_in_finder_requested.emit(self._idx)
+        elif act == remove_act:
+            self.remove_requested.emit(self._idx)
+
+    # ── rename ───────────────────────────────────────────────────────────────
+
+    def _start_rename(self, event):
+        self._name_edit = QLineEdit(self._name_lbl.text(), self)
+        self._name_edit.setFixedWidth(90)
+        self._name_edit.selectAll()
+        self._name_edit.setFocus()
+        self._name_edit.returnPressed.connect(self._finish_rename)
+        self._name_edit.editingFinished.connect(self._finish_rename)
+        self.layout().replaceWidget(self._name_lbl, self._name_edit)
+        self._name_lbl.hide()
+
+    def _finish_rename(self):
+        if self._name_edit is None:
+            return
+        new_name = self._name_edit.text().strip()
+        if new_name:
+            self._name_lbl.setText(new_name)
+            self.name_changed.emit(self._idx, new_name)
+        self.layout().replaceWidget(self._name_edit, self._name_lbl)
+        self._name_edit.deleteLater()
+        self._name_edit = None
+        self._name_lbl.show()
 
     # ── private slots ─────────────────────────────────────────────────────────
 
