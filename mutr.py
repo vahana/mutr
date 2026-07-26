@@ -590,12 +590,19 @@ class MainWindow(QMainWindow):
         if len(self._tracks) <= 1:
             return
         name = self._tracks[track_idx].name
-        reply = QMessageBox.question(
-            self, "Remove Track", f"Remove \"{name}\"?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        file_path = self._tracks[track_idx].file
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Remove Track")
+        msg.setText(f"Remove \"{name}\"?")
+        msg.setInformativeText("Remove only the track, or also delete the file from disk?")
+        remove_btn = msg.addButton("Remove Only", QMessageBox.ButtonRole.DestructiveRole)
+        delete_btn = msg.addButton("Remove && Delete File", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg.addButton(QMessageBox.StandardButton.Cancel)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == cancel_btn:
             return
+        delete_file = (clicked == delete_btn)
         p, _ = self._players[track_idx]
         p.stop()
         p.setSource(QUrl())
@@ -614,6 +621,11 @@ class MainWindow(QMainWindow):
             self._pre_solo_mutes = []
         elif self._solo_track > track_idx:
             self._solo_track -= 1
+        if delete_file:
+            try:
+                Path(file_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def _on_track_renamed(self, track_idx: int, new_name: str):
         self._tracks[track_idx].name = new_name
