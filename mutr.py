@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction("Save Project", self._save_project)
         self._file_menu.addAction("Save As…", self._save_project_as)
         self._file_menu.addSeparator()
-        self._file_menu.addAction("+ Add Track…", self._add_track_file)
+        self._file_menu.addAction("Add Track…", self._add_track_file)
         self._file_menu.addAction("Download…", self._open_downloader)
         self._file_menu.addSeparator()
         self._file_menu.addAction("Close", self._close_project)
@@ -782,7 +782,6 @@ class MainWindow(QMainWindow):
         name = Path(path).stem
         data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
         self._add_track(data)
-        self._update_recent(path)
 
     def _save_project(self):
         if self._current_project is None:

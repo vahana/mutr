@@ -113,6 +113,7 @@ class SplitDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Split Stems")
         self.setMinimumWidth(420)
+        self.resize(560, 400)
         self.setModal(True)
         self._src = src
         self._out_dir = out_dir
