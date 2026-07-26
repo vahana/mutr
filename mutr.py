@@ -7,6 +7,7 @@
 # ]
 # ///
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,8 +18,8 @@ from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout,
-    QLabel, QMainWindow, QMenu, QMessageBox, QPushButton,
-    QScrollArea, QSlider, QStatusBar, QVBoxLayout, QWidget,
+    QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
+    QPushButton, QScrollArea, QSlider, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from dialogs import DownloadDialog, PitchDialog, SplitDialog
@@ -526,7 +527,7 @@ class MainWindow(QMainWindow):
         self._tracks[track_idx].name = new_name
 
     def _on_show_in_finder(self, track_idx: int):
-        file_path = self._tracks[track_idx].file
+        file_path = str(Path(self._tracks[track_idx].file).resolve())
         subprocess.run(["open", "-R", file_path])
 
     # ── pitch shift (via dialog) ──────────────────────────────────────────────
@@ -553,9 +554,9 @@ class MainWindow(QMainWindow):
 
     def _on_split_requested(self, track_idx: int):
         data = self._tracks[track_idx]
-        out_dir = str(
-            Path(data.source_file).parent / (Path(data.source_file).stem + "_tracks")
-        )
+        proj_dir = self._project_dir()
+        base_dir = proj_dir if proj_dir is not None else Path(data.source_file).parent
+        out_dir = str(base_dir / (Path(data.source_file).stem + "_tracks"))
         dlg = SplitDialog(data.source_file, out_dir, parent=self)
         dlg.finished_stems.connect(self._on_stems_done)
         dlg.exec()
@@ -578,7 +579,8 @@ class MainWindow(QMainWindow):
     # ── download ──────────────────────────────────────────────────────────────
 
     def _open_downloader(self):
-        start_dir = self._prefs.get("last_audio_dir", str(Path.home() / "Downloads"))
+        proj_dir = self._project_dir()
+        start_dir = str(proj_dir) if proj_dir is not None else self._prefs.get("last_audio_dir", str(Path.home() / "Downloads"))
         dlg = DownloadDialog(start_dir=start_dir, parent=self)
         dlg.file_ready.connect(self._on_download_done)
         dlg.exec()
@@ -589,6 +591,21 @@ class MainWindow(QMainWindow):
 
     # ── project ───────────────────────────────────────────────────────────────
 
+    def _project_dir(self) -> Path | None:
+        if self._current_project is None:
+            return None
+        return self._current_project.parent
+
+    def _copy_to_project(self, src: str) -> str:
+        proj_dir = self._project_dir()
+        if proj_dir is None:
+            return src
+        src_path = Path(src)
+        dst = proj_dir / src_path.name
+        if dst.exists() and dst.samefile(src_path):
+            return str(dst)
+        return str(shutil.copy2(src_path, dst))
+
     def _new_project(self):
         if self._tracks:
             reply = QMessageBox.question(
@@ -598,8 +615,17 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
         self._clear_tracks()
-        self._current_project = None
-        self.setWindowTitle("mutr")
+        projects_dir = Path.home() / ".mutr" / "projects"
+        projects_dir.mkdir(parents=True, exist_ok=True)
+        name = "New Project"
+        proj_dir = projects_dir / name
+        counter = 1
+        while proj_dir.exists():
+            proj_dir = projects_dir / f"New Project {counter}"
+            counter += 1
+        proj_dir.mkdir(parents=True)
+        self._current_project = proj_dir / f"{name}.mutrproj"
+        self.setWindowTitle(f"mutr — {proj_dir.name}")
 
     def _open_source_file(self, path: str = ""):
         if not path:
@@ -610,17 +636,11 @@ class MainWindow(QMainWindow):
             )
         if not path:
             return
-        if self._tracks:
-            reply = QMessageBox.question(
-                self, "Open File", "Close the current project?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            self._clear_tracks()
         self._prefs["last_audio_dir"] = str(Path(path).parent)
+        path = self._copy_to_project(path)
+        idx = len(self._tracks)
         data = TrackData(name="Full Mix", file=path, source_file=path, color=track_color(0))
-        self._add_track(data, is_source=True)
+        self._add_track(data, is_source=(idx == 0))
         self._update_recent(path)
 
     def _add_track_clicked(self):
@@ -632,6 +652,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self._prefs["last_audio_dir"] = str(Path(path).parent)
+        path = self._copy_to_project(path)
         idx = len(self._tracks)
         name = Path(path).stem
         data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
@@ -644,19 +665,26 @@ class MainWindow(QMainWindow):
             self._write_project(self._current_project)
 
     def _save_project_as(self):
-        start_dir = self._prefs.get("last_project_dir", "")
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Project", start_dir, "mutr project (*.mutrproj)"
-        )
-        if not path:
+        proj_dir = self._project_dir()
+        if proj_dir is None:
+            self._new_project()
+            if self._current_project is None:
+                return
+            self._write_project(self._current_project)
             return
-        if not path.endswith(".mutrproj"):
-            path += ".mutrproj"
-        self._current_project = Path(path)
-        self._prefs["last_project_dir"] = str(Path(path).parent)
-        self._write_project(self._current_project)
-        self._update_recent(path)
-        self.setWindowTitle(f"mutr — {Path(path).name}")
+        name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=proj_dir.name)
+        if not ok or not (name := name.strip()):
+            return
+        new_dir = proj_dir.parent / name
+        if new_dir.exists() and new_dir != proj_dir:
+            QMessageBox.critical(self, "Error", f"Project \"{name}\" already exists.")
+            return
+        proj_dir.rename(new_dir)
+        new_proj_file = new_dir / f"{name}.mutrproj"
+        self._current_project = new_proj_file
+        self._write_project(new_proj_file)
+        self._update_recent(str(new_proj_file))
+        self.setWindowTitle(f"mutr — {name}")
 
     def _write_project(self, path: Path):
         state = {
@@ -718,7 +746,7 @@ class MainWindow(QMainWindow):
 
         self._prefs["last_project_dir"] = str(Path(path).parent)
         self._update_recent(path)
-        self.setWindowTitle(f"mutr — {Path(path).name}")
+        self.setWindowTitle(f"mutr — {Path(path).parent.name}")
 
     # ── prefs / recent ────────────────────────────────────────────────────────
 
@@ -756,6 +784,7 @@ class MainWindow(QMainWindow):
         for url in event.mimeData().urls():
             path = url.toLocalFile()
             if Path(path).suffix.lower() in audio_exts:
+                path = self._copy_to_project(path)
                 idx = len(self._tracks)
                 name = Path(path).stem
                 data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
