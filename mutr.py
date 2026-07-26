@@ -689,21 +689,25 @@ class MainWindow(QMainWindow):
 
     def _on_pitch_shift_requested(self, track_idx: int):
         data = self._tracks[track_idx]
-        dlg = PitchDialog(data.source_file, data.pitch_baked, parent=self)
-        dlg.applied.connect(lambda path, st, i=track_idx: self._reload_track_source(i, path, st))
+        dlg = PitchDialog(data.source_file, parent=self)
+        dlg.applied.connect(lambda path, st, i=track_idx: self._add_pitch_shifted_track(i, path, st))
         dlg.exec()
 
-    def _reload_track_source(self, track_idx: int, new_path: str, pitch_baked: int):
-        data = self._tracks[track_idx]
-        data.file = new_path
-        data.pitch_baked = pitch_baked
-        pos = self._current_pos()
-        was_playing = self._is_playing()
-        player = self._players[track_idx][0]
-        player.setSource(QUrl.fromLocalFile(new_path))
-        player.setPosition(int(pos))
-        if was_playing:
-            player.play()
+    def _add_pitch_shifted_track(self, track_idx: int, new_path: str, semitones: int):
+        if semitones == 0:
+            return
+        original = self._tracks[track_idx]
+        sign = "+" if semitones > 0 else ""
+        name = f"{original.name} {sign}{semitones} st"
+        idx = len(self._tracks)
+        data = TrackData(
+            name=name,
+            file=new_path,
+            source_file=new_path,
+            color=track_color(idx),
+            pitch_baked=semitones,
+        )
+        self._add_track(data)
         self._dirty = True
 
     # ── stem split (via dialog) ───────────────────────────────────────────────
