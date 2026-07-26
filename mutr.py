@@ -177,14 +177,14 @@ class MainWindow(QMainWindow):
         if p.suffix == ".mutrproj":
             self._open_project(path)
         else:
-            self._open_source_file(path)
+            self._add_track_file(path)
 
     def _open_recent(self, path: str):
         p = Path(path)
         if p.suffix == ".mutrproj":
             self._open_project(path)
         else:
-            self._open_source_file(path)
+            self._add_track_file(path)
 
     def _show_tracks_page(self):
         self._stack.setCurrentIndex(1)
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction("Save Project", self._save_project)
         self._file_menu.addAction("Save As…", self._save_project_as)
         self._file_menu.addSeparator()
-        self._file_menu.addAction("+ Add Track…", self._add_track_clicked)
+        self._file_menu.addAction("+ Add Track…", self._add_track_file)
         self._file_menu.addAction("Download…", self._open_downloader)
         self._file_menu.addSeparator()
         self._file_menu.addAction("Close", self._close_project)
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
 
     # ── track management ─────────────────────────────────────────────────────
 
-    def _add_track(self, data: TrackData, is_source: bool = False, auto_play: bool = False):
+    def _add_track(self, data: TrackData, auto_play: bool = False):
         idx = len(self._tracks)
         self._tracks.append(data)
 
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
         if auto_play:
             player.play()
 
-        row = TrackRow(idx, data, is_source=is_source)
+        row = TrackRow(idx, data)
         row.mute_toggled.connect(self._on_mute)
         row.volume_changed.connect(self._on_volume_changed)
         row.pitch_shift_requested.connect(self._on_pitch_shift_requested)
@@ -692,7 +692,7 @@ class MainWindow(QMainWindow):
                 source_file=path,
                 color=track_color(idx),
             )
-            self._add_track(data, is_source=False)
+            self._add_track(data)
 
     # ── download ──────────────────────────────────────────────────────────────
 
@@ -705,7 +705,7 @@ class MainWindow(QMainWindow):
 
     def _on_download_done(self, path: str):
         self._prefs["last_audio_dir"] = str(Path(path).parent)
-        self._open_source_file(path)
+        self._add_track_file(path)
 
     # ── project ───────────────────────────────────────────────────────────────
 
@@ -751,28 +751,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"mutr — {proj_dir.name}")
         self._show_tracks_page()
 
-    def _open_source_file(self, path: str = ""):
+    def _add_track_file(self, path: str = ""):
         if not path:
             start_dir = self._prefs.get("last_audio_dir", "")
             path, _ = QFileDialog.getOpenFileName(
-                self, "Open Audio / Video File", start_dir,
+                self, "Add Audio / Video Track", start_dir,
                 "Audio/Video (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.flac *.m4a *.ogg)",
             )
-        if not path:
-            return
-        self._prefs["last_audio_dir"] = str(Path(path).parent)
-        path = self._copy_to_project(path)
-        idx = len(self._tracks)
-        data = TrackData(name="Full Mix", file=path, source_file=path, color=track_color(0))
-        self._add_track(data, is_source=(idx == 0))
-        self._update_recent(path)
-
-    def _add_track_clicked(self):
-        start_dir = self._prefs.get("last_audio_dir", "")
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Add Audio / Video Track", start_dir,
-            "Audio/Video (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.flac *.m4a *.ogg)",
-        )
         if not path:
             return
         self._prefs["last_audio_dir"] = str(Path(path).parent)
@@ -781,6 +766,7 @@ class MainWindow(QMainWindow):
         name = Path(path).stem
         data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
         self._add_track(data)
+        self._update_recent(path)
 
     def _save_project(self):
         if self._current_project is None:
@@ -850,7 +836,7 @@ class MainWindow(QMainWindow):
                     f"Track file not found:\n{t['file']}\nSkipping.")
                 continue
             data = TrackData.from_dict(t, track_color(i))
-            self._add_track(data, is_source=(i == 0))
+            self._add_track(data)
 
         if state.get("markers"):
             self._loop_bar.set_markers(state["markers"])
@@ -893,10 +879,8 @@ class MainWindow(QMainWindow):
             act.setToolTip(path)
             if not p.exists():
                 act.setEnabled(False)
-            elif p.suffix == ".mutrproj":
-                act.triggered.connect(lambda checked, p=path: self._open_project(p))
             else:
-                act.triggered.connect(lambda checked, p=path: self._open_source_file(p))
+                act.triggered.connect(lambda checked, p=path: self._open_recent(p))
 
     # ── help ──────────────────────────────────────────────────────────────────
 
@@ -967,10 +951,7 @@ def main():
 
     if len(sys.argv) > 1:
         arg = sys.argv[1]
-        if arg.endswith(".mutrproj"):
-            QTimer.singleShot(0, lambda: win._open_project(arg))
-        else:
-            QTimer.singleShot(0, lambda: win._open_source_file(arg))
+        QTimer.singleShot(0, lambda: win._add_track_file(arg))
 
     sys.exit(app.exec())
 

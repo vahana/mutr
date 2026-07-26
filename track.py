@@ -172,10 +172,9 @@ class TrackRow(QWidget):
 
     _ROW_H = 52
 
-    def __init__(self, track_idx: int, data: TrackData, is_source: bool = False, parent=None):
+    def __init__(self, track_idx: int, data: TrackData, parent=None):
         super().__init__(parent)
         self._idx = track_idx
-        self._is_source = is_source
         self.setFixedHeight(self._ROW_H)
 
         layout = QHBoxLayout(self)
@@ -255,7 +254,7 @@ class TrackRow(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         pitch_act = menu.addAction("Pitch Shift…")
-        split_act = menu.addAction("Split Stems…") if self._is_source else None
+        split_act = menu.addAction("Split Stems…")
         menu.addSeparator()
         finder_act = menu.addAction("Show in Finder")
         menu.addSeparator()
