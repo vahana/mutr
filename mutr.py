@@ -146,6 +146,8 @@ class MainWindow(QMainWindow):
             btn.setMinimumSize(QSize(180, 80))
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             btn.clicked.connect(lambda checked, p2=path: self._open_recent(p2))
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(lambda pos, p2=path: self._welcome_context_menu(pos, p2))
             self._welcome_grid.addWidget(btn, i // cols, i % cols)
 
         idx = len(recents)
@@ -163,6 +165,18 @@ class MainWindow(QMainWindow):
         new_btn.setStyleSheet("QPushButton { border: 2px dashed #888; }")
         new_btn.clicked.connect(self._new_project)
         self._welcome_grid.addWidget(new_btn, idx // cols, idx % cols)
+
+    def _welcome_context_menu(self, pos, path: str):
+        menu = QMenu()
+        remove_act = menu.addAction("Remove from Recents")
+        act = menu.exec(self.sender().mapToGlobal(pos))
+        if act == remove_act:
+            recents = self._prefs.get("recent_projects", [])
+            if path in recents:
+                recents.remove(path)
+                save_prefs(self._prefs)
+                self._refresh_welcome()
+                self._refresh_recent_menu()
 
     def _open_from_welcome(self):
         start_dir = self._prefs.get("last_project_dir", "") or str(Path.home())
