@@ -733,6 +733,8 @@ class MainWindow(QMainWindow):
         if proj_dir is None:
             return src
         src_path = Path(src)
+        if not src_path.exists():
+            return src
         dst = proj_dir / src_path.name
         if dst.exists() and dst.samefile(src_path):
             return str(dst)
