@@ -108,10 +108,12 @@ class StemWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, src: str, out_dir: str):
+    def __init__(self, src: str, out_dir: str, model: str = "htdemucs", shifts: int = 0):
         super().__init__()
         self.src = src
         self.out_dir = out_dir
+        self.model = model
+        self.shifts = shifts
 
     def run(self):
         try:
@@ -119,7 +121,8 @@ class StemWorker(QThread):
             self.progress.emit("Separating stems…")
             proc = subprocess.Popen(
                 [uv, "run", "--with", "demucs", "--with", "numpy",
-                 "demucs", "--out", self.out_dir, self.src],
+                 "demucs", "-n", self.model, "--shifts", str(self.shifts),
+                 "--out", self.out_dir, self.src],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True,
             )

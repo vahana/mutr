@@ -4,8 +4,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
+    QApplication, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
 )
 
 from workers import DownloadWorker, PitchWorker, StemWorker, _AUDIO_EXTS
@@ -98,13 +98,16 @@ class PitchDialog(QDialog):
         QMessageBox.critical(self, "Pitch shift error", msg)
 
 
+_MODELS = ["htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra_q"]
+
+
 class SplitDialog(QDialog):
     finished_stems = pyqtSignal(dict)
 
     def __init__(self, src: str, out_dir: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Split Stems")
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(340)
         self.setModal(True)
         self._src = src
         self._out_dir = out_dir
@@ -116,13 +119,26 @@ class SplitDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        info = QLabel(
-            "Separate this track into stems using AI:\n"
-            "Vocals · Drums · Bass · Other\n\n"
-            "This may take a few minutes."
-        )
+        info = QLabel("Separate audio into Vocals · Drums · Bass · Other")
         info.setWordWrap(True)
         layout.addWidget(info)
+
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("Model:"))
+        self._model_cb = QComboBox()
+        self._model_cb.addItems(_MODELS)
+        model_row.addWidget(self._model_cb, stretch=1)
+        layout.addLayout(model_row)
+
+        shift_row = QHBoxLayout()
+        shift_row.addWidget(QLabel("Quality (shifts):"))
+        self._shifts_sb = QSpinBox()
+        self._shifts_sb.setRange(0, 20)
+        self._shifts_sb.setValue(0)
+        self._shifts_sb.setToolTip("Higher = better quality but slower. 0 = fast, 10 = paper default.")
+        shift_row.addWidget(self._shifts_sb)
+        shift_row.addStretch()
+        layout.addLayout(shift_row)
 
         self._apply_btn = QPushButton("Apply")
         self._apply_btn.clicked.connect(self._apply)
@@ -141,7 +157,9 @@ class SplitDialog(QDialog):
         self._apply_btn.setEnabled(False)
         self._progress.setVisible(True)
 
-        self._worker = StemWorker(self._src, self._out_dir)
+        model = self._model_cb.currentText()
+        shifts = self._shifts_sb.value()
+        self._worker = StemWorker(self._src, self._out_dir, model=model, shifts=shifts)
         self._worker.progress.connect(self._status.setText)
         self._worker.finished.connect(self._on_done)
         self._worker.error.connect(self._on_error)
