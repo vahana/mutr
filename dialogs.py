@@ -214,8 +214,8 @@ class DownloadDialog(QDialog):
 
         safe = "".join(c if c.isalnum() or c in " -_()" else "_" for c in raw_title).strip()
         out_path, _ = QFileDialog.getSaveFileName(
-            self, "Save download", str(Path(self._start_dir) / f"{safe}.mp4"),
-            "MP4 video (*.mp4)",
+            self, "Save download", str(Path(self._start_dir) / f"{safe}.mkv"),
+            "Video (*.mkv)",
         )
         if not out_path:
             return

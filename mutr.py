@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         player.setAudioOutput(audio_out)
 
         if idx == 0:
-            player.setVideoOutput(self._video_window.video_widget)
+            print(f"[video] player created for idx=0, file={data.file}")
             player.positionChanged.connect(self._on_position)
             player.durationChanged.connect(self._on_duration)
             player.playbackStateChanged.connect(self._on_play_state)
@@ -373,8 +373,10 @@ class MainWindow(QMainWindow):
         self._play_btn.setText("⏸" if playing else "▶")
 
     def _on_media_status(self, status):
+        print(f"[video] mediaStatus → {status}")
         if status == QMediaPlayer.MediaStatus.LoadedMedia:
             has_video = self._players[0][0].hasVideo()
+            print(f"[video] LoadedMedia: hasVideo={has_video}")
             self._video_btn.setEnabled(has_video)
             if self._pending_seek_ms > 0:
                 QTimer.singleShot(100, lambda: self._sync_seek(self._pending_seek_ms))
@@ -395,11 +397,18 @@ class MainWindow(QMainWindow):
     # ── video window ──────────────────────────────────────────────────────────
 
     def _show_video_window(self):
+        print("[video] _show_video_window called")
         self._video_window.show()
         self._video_window.raise_()
-        QApplication.processEvents()
+        QTimer.singleShot(100, self._attach_video_output)
+
+    def _attach_video_output(self):
+        print(f"[video] _attach_video_output: players={len(self._players)}")
         if self._players:
-            self._players[0][0].setVideoOutput(self._video_window.video_widget)
+            p = self._players[0][0]
+            print(f"[video] calling setVideoOutput, playbackState={p.playbackState()}, mediaStatus={p.mediaStatus()}, hasVideo={p.hasVideo()}")
+            p.setVideoOutput(self._video_window.video_widget)
+            print("[video] setVideoOutput done")
 
     # ── loop / segment ────────────────────────────────────────────────────────
 

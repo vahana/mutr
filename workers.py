@@ -21,74 +21,16 @@ class DownloadWorker(QThread):
     def run(self):
         try:
             yt_dlp = _require("yt-dlp")
-            ffmpeg = _require("ffmpeg")
-
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp_path = Path(tmp)
-                raw = str(tmp_path / "raw.%(ext)s")
-
-                self.progress.emit("Downloading…")
-                subprocess.run(
-                    [yt_dlp, self.url,
-                     "-f", "bestvideo+bestaudio/best",
-                     "--merge-output-format", "mkv",
-                     "-o", raw],
-                    check=True, capture_output=True,
-                )
-
-                downloaded = next(tmp_path.glob("raw.*"))
-
-                ffprobe = shutil.which("ffprobe") or ffmpeg
-                probe = subprocess.run(
-                    [ffprobe, "-v", "quiet", "-select_streams", "v:0",
-                     "-show_entries", "stream=codec_name",
-                     "-of", "csv=p=0", str(downloaded)],
-                    capture_output=True, text=True,
-                )
-                vcodec = probe.stdout.strip()
-
-                if vcodec == "h264":
-                    self.progress.emit("Remuxing…")
-                    subprocess.run(
-                        [ffmpeg, "-y", "-i", str(downloaded),
-                         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                         self.out_path],
-                        check=True, capture_output=True,
-                    )
-                else:
-                    dur = subprocess.run(
-                        [ffprobe, "-v", "quiet", "-show_entries",
-                         "format=duration", "-of", "csv=p=0", str(downloaded)],
-                        capture_output=True, text=True,
-                    )
-                    try:
-                        total_sec = float(dur.stdout.strip())
-                    except (ValueError, AttributeError):
-                        total_sec = 0.0
-
-                    self.progress.emit("Converting to H.264… 0%")
-                    proc = subprocess.Popen(
-                        [ffmpeg, "-y", "-i", str(downloaded),
-                         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                         "-c:a", "aac", "-b:a", "192k",
-                         "-progress", "pipe:1", "-nostats",
-                         self.out_path],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                        text=True,
-                    )
-                    for line in proc.stdout:
-                        if line.startswith("out_time_ms=") and total_sec > 0:
-                            try:
-                                ms = int(line.split("=")[1])
-                                pct = min(99, int(ms / 1_000_000 / total_sec * 100))
-                                self.progress.emit(f"Converting to H.264… {pct}%")
-                            except (ValueError, IndexError):
-                                pass
-                    proc.wait()
-                    if proc.returncode != 0:
-                        raise subprocess.CalledProcessError(proc.returncode, [ffmpeg])
-
+            self.progress.emit("Downloading…")
+            subprocess.run(
+                [yt_dlp, self.url,
+                 "-f", "bestvideo[vcodec!^=av01][height<=1080]+bestaudio"
+                       "/bestvideo[height<=1080]+bestaudio"
+                       "/best[height<=1080]/best",
+                 "--merge-output-format", "mkv",
+                 "-o", self.out_path],
+                check=True, capture_output=True,
+            )
             self.finished.emit(self.out_path)
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode(errors="replace") if e.stderr else ""
