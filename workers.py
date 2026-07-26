@@ -116,16 +116,33 @@ class StemWorker(QThread):
     def run(self):
         try:
             uv = _require("uv")
-            self.progress.emit("Separating stems (this may take a few minutes)…")
-            subprocess.run(
+            self.progress.emit("Separating stems…")
+            proc = subprocess.Popen(
                 [uv, "run", "--with", "demucs", "--with", "numpy",
                  "demucs", "--out", self.out_dir, self.src],
-                check=True, capture_output=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
             )
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                if "Separating" in line or "%" in line or "track" in line.lower():
+                    self.progress.emit(line)
+            proc.wait()
+            if proc.returncode != 0:
+                raise subprocess.CalledProcessError(proc.returncode, proc.args)
 
             stems = {}
             for wav in Path(self.out_dir).rglob("*.wav"):
-                stems[wav.stem] = str(wav)
+                target = Path(self.out_dir) / wav.name
+                if wav.parent != Path(self.out_dir):
+                    shutil.move(str(wav), str(target))
+                stems[wav.stem] = str(target)
+
+            for d in Path(self.out_dir).iterdir():
+                if d.is_dir():
+                    shutil.rmtree(d)
 
             self.finished.emit(stems)
         except subprocess.CalledProcessError as e:

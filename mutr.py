@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("mutr")
         self.resize(900, 520)
+        self.setAcceptDrops(True)
 
         self._tracks: list[TrackData] = []
         self._players: list[tuple[QMediaPlayer, QAudioOutput]] = []
@@ -65,7 +66,6 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._connect_signals()
-        self._refresh_recent_menu()
 
     # ── UI construction ───────────────────────────────────────────────────────
 
@@ -103,17 +103,24 @@ class MainWindow(QMainWindow):
 
     def _build_topbar(self) -> QHBoxLayout:
         row = QHBoxLayout()
-        self._new_btn = QPushButton("New")
-        self._open_proj_btn = QPushButton("Open Project…")
-        self._save_proj_btn = QPushButton("Save Project")
-        self._save_as_btn = QPushButton("Save As…")
-        self._open_src_btn = QPushButton("Open File…")
-        self._add_track_btn = QPushButton("+ Track")
-        self._download_btn = QPushButton("⬇ Download…")
-        self._recent_btn = QPushButton("Recent ▾")
-        self._recent_btn.setFixedWidth(90)
-        self._recent_menu = QMenu(self)
-        self._recent_btn.setMenu(self._recent_menu)
+
+        self._file_menu = QMenu(self)
+        self._file_menu.addAction("New", self._new_project)
+        self._file_menu.addAction("Open Project…", self._open_project)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction("Save Project", self._save_project)
+        self._file_menu.addAction("Save As…", self._save_project_as)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction("Open File…", self._open_source_file)
+        self._file_menu.addAction("+ Add Track…", self._add_track_clicked)
+        self._file_menu.addAction("Download…", self._open_downloader)
+        self._recent_menu = QMenu("Recent", self)
+        self._file_menu.addMenu(self._recent_menu)
+        self._file_menu.aboutToShow.connect(self._refresh_recent_menu)
+
+        self._file_btn = QPushButton("File")
+        self._file_btn.setMenu(self._file_menu)
+        row.addWidget(self._file_btn)
 
         self._video_btn = QPushButton("⬛ Video")
         self._video_btn.setEnabled(False)
@@ -123,10 +130,6 @@ class MainWindow(QMainWindow):
         self._help_btn = QPushButton("?")
         self._help_btn.setFixedWidth(28)
 
-        for w in [self._new_btn, self._open_proj_btn, self._save_proj_btn,
-                  self._save_as_btn, self._open_src_btn, self._add_track_btn,
-                  self._download_btn, self._recent_btn]:
-            row.addWidget(w)
         row.addStretch()
         row.addWidget(self._video_btn)
         row.addWidget(self._help_btn)
@@ -183,13 +186,6 @@ class MainWindow(QMainWindow):
     # ── signal wiring ─────────────────────────────────────────────────────────
 
     def _connect_signals(self):
-        self._new_btn.clicked.connect(self._new_project)
-        self._open_proj_btn.clicked.connect(self._open_project)
-        self._save_proj_btn.clicked.connect(self._save_project)
-        self._save_as_btn.clicked.connect(self._save_project_as)
-        self._open_src_btn.clicked.connect(self._open_source_file)
-        self._add_track_btn.clicked.connect(self._add_track_clicked)
-        self._download_btn.clicked.connect(self._open_downloader)
         self._help_btn.clicked.connect(self._show_help)
         self._play_btn.clicked.connect(self._toggle_play)
         self._stop_btn.clicked.connect(self._stop)
@@ -558,7 +554,7 @@ class MainWindow(QMainWindow):
     def _on_split_requested(self, track_idx: int):
         data = self._tracks[track_idx]
         out_dir = str(
-            Path(data.source_file).parent / (Path(data.source_file).stem + "_stems")
+            Path(data.source_file).parent / (Path(data.source_file).stem + "_tracks")
         )
         dlg = SplitDialog(data.source_file, out_dir, parent=self)
         dlg.finished_stems.connect(self._on_stems_done)
@@ -750,6 +746,20 @@ class MainWindow(QMainWindow):
                 act.triggered.connect(lambda checked, p=path: self._open_source_file(p))
 
     # ── help ──────────────────────────────────────────────────────────────────
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        audio_exts = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".flac", ".m4a", ".ogg"}
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if Path(path).suffix.lower() in audio_exts:
+                idx = len(self._tracks)
+                name = Path(path).stem
+                data = TrackData(name=name, file=path, source_file=path, color=track_color(idx))
+                self._add_track(data)
 
     def _show_help(self):
         dlg = QDialog(self)
