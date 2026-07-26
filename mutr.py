@@ -830,16 +830,25 @@ class MainWindow(QMainWindow):
         new_proj_file = new_dir / f"{name}.mutrproj"
         if moved_old.exists() and moved_old != new_proj_file:
             moved_old.rename(new_proj_file)
+        old_dir_s = str(proj_dir)
+        new_dir_s = str(new_dir)
+        for data in self._tracks:
+            if data.file.startswith(old_dir_s):
+                data.file = data.file.replace(old_dir_s, new_dir_s)
+            if data.source_file.startswith(old_dir_s):
+                data.source_file = data.source_file.replace(old_dir_s, new_dir_s)
+        for p, _ in self._players:
+            src = p.source()
+            if src.isValid() and src.toLocalFile().startswith(old_dir_s):
+                p.setSource(QUrl.fromLocalFile(src.toLocalFile().replace(old_dir_s, new_dir_s)))
         self._current_project = new_proj_file
         self._write_project(new_proj_file)
         self._update_recent(str(new_proj_file))
         recents = self._prefs.get("recent_projects", [])
-        old_dir = str(proj_dir)
-        new_dir_s = str(new_dir)
         cleaned = []
         for r in recents:
-            if r.startswith(old_dir):
-                relocated = r.replace(old_dir, new_dir_s)
+            if r.startswith(old_dir_s):
+                relocated = r.replace(old_dir_s, new_dir_s)
                 if Path(relocated).exists():
                     cleaned.append(relocated)
             else:
