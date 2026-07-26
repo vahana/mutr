@@ -98,7 +98,12 @@ class PitchDialog(QDialog):
         QMessageBox.critical(self, "Pitch shift error", msg)
 
 
-_MODELS = ["htdemucs", "htdemucs_ft", "htdemucs_6s", "mdx_extra_q"]
+_MODELS = [
+    ("htdemucs",      "Demucs (4 stems, default)"),
+    ("htdemucs_ft",   "Demucs Fine-Tuned (4 stems, higher quality)"),
+    ("htdemucs_6s",   "Demucs 6-Stem (vocals, drums, bass, guitar, piano, other)"),
+    ("mdx_extra_q",   "MDX Extra (best vocal separation)"),
+]
 
 
 class SplitDialog(QDialog):
@@ -107,7 +112,7 @@ class SplitDialog(QDialog):
     def __init__(self, src: str, out_dir: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Split Stems")
-        self.setMinimumWidth(340)
+        self.setMinimumWidth(420)
         self.setModal(True)
         self._src = src
         self._out_dir = out_dir
@@ -119,23 +124,23 @@ class SplitDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        info = QLabel("Separate audio into Vocals · Drums · Bass · Other")
+        info = QLabel("Separate audio into individual stems")
         info.setWordWrap(True)
         layout.addWidget(info)
 
         model_row = QHBoxLayout()
         model_row.addWidget(QLabel("Model:"))
         self._model_cb = QComboBox()
-        self._model_cb.addItems(_MODELS)
+        self._model_cb.addItems([label for _, label in _MODELS])
         model_row.addWidget(self._model_cb, stretch=1)
         layout.addLayout(model_row)
 
         shift_row = QHBoxLayout()
-        shift_row.addWidget(QLabel("Quality (shifts):"))
+        shift_row.addWidget(QLabel("Quality:"))
         self._shifts_sb = QSpinBox()
         self._shifts_sb.setRange(0, 20)
         self._shifts_sb.setValue(0)
-        self._shifts_sb.setToolTip("Higher = better quality but slower. 0 = fast, 10 = paper default.")
+        self._shifts_sb.setToolTip("Higher = better separation quality but slower. 0 = fast, 10 = paper default.")
         shift_row.addWidget(self._shifts_sb)
         shift_row.addStretch()
         layout.addLayout(shift_row)
@@ -157,7 +162,7 @@ class SplitDialog(QDialog):
         self._apply_btn.setEnabled(False)
         self._progress.setVisible(True)
 
-        model = self._model_cb.currentText()
+        model = _MODELS[self._model_cb.currentIndex()][0]
         shifts = self._shifts_sb.value()
         self._worker = StemWorker(self._src, self._out_dir, model=model, shifts=shifts)
         self._worker.progress.connect(self._status.setText)
