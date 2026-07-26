@@ -29,6 +29,7 @@ from project import load_prefs, load_project, save_prefs, save_project, update_r
 from track import TrackData, TrackRow, track_color
 
 _STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
+_VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 
 
 class VideoWindow(QMainWindow):
@@ -229,16 +230,10 @@ class MainWindow(QMainWindow):
         self._file_btn.setMenu(self._file_menu)
         row.addWidget(self._file_btn)
 
-        self._video_btn = QPushButton("⬛ Video")
-        self._video_btn.setEnabled(False)
-        self._video_btn.setToolTip("Open video window")
-        self._video_btn.clicked.connect(self._show_video_window)
-
         self._help_btn = QPushButton("?")
         self._help_btn.setFixedWidth(28)
 
         row.addStretch()
-        row.addWidget(self._video_btn)
         row.addWidget(self._help_btn)
         return row
 
@@ -337,6 +332,11 @@ class MainWindow(QMainWindow):
 
         self._players.append((player, audio_out))
         self._apply_volume(idx)
+        is_vid = Path(data.file).suffix.lower() in _VIDEO_EXTS
+        print(f"[video] _add_track idx={idx}, file={data.file}, is_video={is_vid}")
+        if is_vid:
+            print(f"[video] setting video output for player idx={idx} before setSource")
+            player.setVideoOutput(self._video_window.video_widget)
         player.setSource(QUrl.fromLocalFile(data.file))
 
         if idx > 0:
@@ -355,6 +355,7 @@ class MainWindow(QMainWindow):
         row.remove_requested.connect(self._on_remove_track_requested)
         row.name_changed.connect(self._on_track_renamed)
         row.show_in_finder_requested.connect(self._on_show_in_finder)
+        row.show_video_requested.connect(self._on_show_video_for_track)
         row.solo_requested.connect(self._on_solo)
         self._track_rows.append(row)
         self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
@@ -382,7 +383,6 @@ class MainWindow(QMainWindow):
             self._tracks_layout.removeWidget(row)
             row.deleteLater()
         self._track_rows.clear()
-        self._video_btn.setEnabled(False)
         self._video_window.hide()
         self._seek_slider.setRange(0, 0)
         self._seek_slider.setEnabled(False)
@@ -485,9 +485,8 @@ class MainWindow(QMainWindow):
     def _on_media_status(self, status):
         print(f"[video] mediaStatus → {status}")
         if status == QMediaPlayer.MediaStatus.LoadedMedia:
-            has_video = self._players[0][0].hasVideo()
-            print(f"[video] LoadedMedia: hasVideo={has_video}")
-            self._video_btn.setEnabled(has_video)
+            p0 = self._players[0][0]
+            print(f"[video] LoadedMedia: hasVideo={p0.hasVideo()}, duration={p0.duration()}, error={p0.error()}, errorString={p0.errorString()}")
             if self._pending_seek_ms > 0:
                 QTimer.singleShot(100, lambda: self._sync_seek(self._pending_seek_ms))
                 self._pending_seek_ms = 0.0
@@ -516,9 +515,16 @@ class MainWindow(QMainWindow):
         print(f"[video] _attach_video_output: players={len(self._players)}")
         if self._players:
             p = self._players[0][0]
-            print(f"[video] calling setVideoOutput, playbackState={p.playbackState()}, mediaStatus={p.mediaStatus()}, hasVideo={p.hasVideo()}")
+            print(f"[video] _attach_video_output: playbackState={p.playbackState()}, mediaStatus={p.mediaStatus()}, hasVideo={p.hasVideo()}, error={p.error()}, errorString={p.errorString()}")
             p.setVideoOutput(self._video_window.video_widget)
-            print("[video] setVideoOutput done")
+            print("[video] _attach_video_output done")
+
+    def _on_show_video_for_track(self, track_idx: int):
+        p = self._players[track_idx][0]
+        print(f"[video] _on_show_video_for_track idx={track_idx}: hasVideo={p.hasVideo()}, error={p.error()}, errorString={p.errorString()}")
+        p.setVideoOutput(self._video_window.video_widget)
+        self._video_window.show()
+        self._video_window.raise_()
 
     # ── loop / segment ────────────────────────────────────────────────────────
 

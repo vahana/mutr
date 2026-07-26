@@ -2,6 +2,7 @@ import array
 import subprocess
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
@@ -160,6 +161,9 @@ class _ColorSwatch(QWidget):
         p.fillRect(self.rect(), self._color)
 
 
+_VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+
+
 class TrackRow(QWidget):
     mute_toggled = pyqtSignal(int, bool)
     volume_changed = pyqtSignal(int, float)
@@ -169,6 +173,7 @@ class TrackRow(QWidget):
     remove_requested = pyqtSignal(int)
     name_changed = pyqtSignal(int, str)
     show_in_finder_requested = pyqtSignal(int)
+    show_video_requested = pyqtSignal(int)
 
     _ROW_H = 52
 
@@ -191,6 +196,14 @@ class TrackRow(QWidget):
 
         self._waveform = _WaveformWidget(data.color)
         layout.addWidget(self._waveform, stretch=1)
+
+        is_video = Path(data.file).suffix.lower() in _VIDEO_EXTS
+        if is_video:
+            self._video_btn = QPushButton("👁")
+            self._video_btn.setFixedSize(24, 24)
+            self._video_btn.setToolTip("Show video")
+            self._video_btn.clicked.connect(lambda: self.show_video_requested.emit(self._idx))
+            layout.addWidget(self._video_btn)
 
         self._solo_btn = QPushButton("S")
         self._solo_btn.setCheckable(True)
