@@ -142,7 +142,10 @@ class MainWindow(QMainWindow):
         cols = 3
         for i, path in enumerate(recents):
             p = Path(path)
-            btn = QPushButton(p.parent.name if p.suffix == ".mutrproj" else p.name)
+            name = p.parent.name if p.suffix == ".mutrproj" else p.name
+            if name.startswith("."):
+                name = name[1:]
+            btn = QPushButton(name)
             btn.setMinimumSize(QSize(180, 80))
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             btn.clicked.connect(lambda checked, p2=path: self._open_recent(p2))
@@ -754,17 +757,18 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
         self._clear_tracks()
-        projects_dir = Path.home() / ".mutr" / "projects"
+        projects_dir = Path.home() / ".mutr"
         projects_dir.mkdir(parents=True, exist_ok=True)
-        name = "New Project"
+        name = ".new_project"
         proj_dir = projects_dir / name
         counter = 1
         while proj_dir.exists():
-            proj_dir = projects_dir / f"New Project {counter}"
+            proj_dir = projects_dir / f".new_project_{counter}"
             counter += 1
         proj_dir.mkdir(parents=True)
         self._current_project = proj_dir / f"{name}.mutrproj"
-        self.setWindowTitle(f"mutr — {proj_dir.name}")
+        title_name = proj_dir.name[1:] if proj_dir.name.startswith(".") else proj_dir.name
+        self.setWindowTitle(f"mutr — {title_name}")
         self._show_tracks_page()
 
     def _add_track_file(self, path: str = ""):
@@ -802,9 +806,9 @@ class MainWindow(QMainWindow):
             name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=default_name)
             if not ok or not (name := name.strip()):
                 return
-            projects_dir = Path.home() / ".mutr" / "projects"
+            projects_dir = Path.home() / ".mutr"
             projects_dir.mkdir(parents=True, exist_ok=True)
-            proj_dir = projects_dir / name
+            proj_dir = projects_dir / f".{name}"
             if proj_dir.exists():
                 QMessageBox.critical(self, "Error", f"Project \"{name}\" already exists.")
                 return
@@ -820,7 +824,7 @@ class MainWindow(QMainWindow):
         name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=default_name)
         if not ok or not (name := name.strip()):
             return
-        new_dir = proj_dir.parent / name
+        new_dir = proj_dir.parent / f".{name}"
         if new_dir.exists() and new_dir != proj_dir:
             QMessageBox.critical(self, "Error", f"Project \"{name}\" already exists.")
             return
@@ -919,7 +923,8 @@ class MainWindow(QMainWindow):
 
         self._prefs["last_project_dir"] = str(Path(path).parent)
         self._update_recent(path)
-        self.setWindowTitle(f"mutr — {Path(path).parent.name}")
+        folder_name = Path(path).parent.name
+        self.setWindowTitle(f"mutr — {folder_name[1:] if folder_name.startswith('.') else folder_name}")
 
     # ── prefs / recent ────────────────────────────────────────────────────────
 
