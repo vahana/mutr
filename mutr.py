@@ -66,6 +66,7 @@ class MainWindow(QMainWindow):
         self._video_window = VideoWindow(self)
         self._solo_track: int = -1
         self._pre_solo_mutes: list[bool] = []
+        self._dirty: bool = False
 
         self._build_ui()
         self._connect_signals()
@@ -298,6 +299,7 @@ class MainWindow(QMainWindow):
         self._seek_slider.sliderReleased.connect(self._on_seek_released)
         self._loop_bar.seek_requested.connect(self._sync_seek)
         self._loop_bar.segment_selected.connect(self._on_segment_selected)
+        self._loop_bar.markers_changed.connect(self._on_markers_changed)
 
         shortcuts = [
             ("Space", self._toggle_play),
@@ -346,6 +348,8 @@ class MainWindow(QMainWindow):
 
         if auto_play:
             player.play()
+
+        self._dirty = True
 
         row = TrackRow(idx, data)
         row.mute_toggled.connect(self._on_mute)
@@ -397,6 +401,7 @@ class MainWindow(QMainWindow):
         self._time_lbl.setText("0:00 / 0:00")
         self._solo_track = -1
         self._pre_solo_mutes = []
+        self._dirty = False
         self._stack.setCurrentIndex(0)
 
     # ── playback sync ─────────────────────────────────────────────────────────
@@ -530,9 +535,14 @@ class MainWindow(QMainWindow):
 
     def _on_loop_toggled(self, on: bool):
         self._loop_bar.set_loop_active(on)
+        self._dirty = True
+
+    def _on_markers_changed(self, markers: list):
+        self._dirty = True
 
     def _on_segment_selected(self, seg_idx: int):
         self._loop_bar.set_active_segment(seg_idx)
+        self._dirty = True
 
     def _seek_by_seconds(self, delta: int):
         if not self._players:
@@ -565,25 +575,30 @@ class MainWindow(QMainWindow):
         if self._loop_bar._active_segment >= n_segs:
             self._loop_bar.set_active_segment(n_segs - 1)
         self._loop_bar.set_markers(markers)
+        self._dirty = True
 
     # ── track event handlers ──────────────────────────────────────────────────
 
     def _on_mute(self, track_idx: int, muted: bool):
         self._tracks[track_idx].muted = muted
         self._apply_volume(track_idx)
+        self._dirty = True
 
     def _on_volume_changed(self, track_idx: int, vol: float):
         self._tracks[track_idx].volume = vol
         self._apply_volume(track_idx)
+        self._dirty = True
 
     def _on_speed(self, value: int):
         rate = value / 100.0
         self._speed_lbl.setText(f"{rate:.2f}×")
         self._sync_rate(rate)
+        self._dirty = True
 
     def _on_master_volume(self, value: int):
         self._master_vol_lbl.setText(f"{value}%")
         self._apply_all_volumes()
+        self._dirty = True
 
     # ── solo ──────────────────────────────────────────────────────────────────
 
@@ -646,6 +661,7 @@ class MainWindow(QMainWindow):
                 Path(file_path).unlink(missing_ok=True)
             except Exception:
                 pass
+        self._dirty = True
 
     def _on_track_renamed(self, track_idx: int, new_name: str):
         data = self._tracks[track_idx]
@@ -663,6 +679,7 @@ class MainWindow(QMainWindow):
                 player.setSource(QUrl.fromLocalFile(str(new_path)))
             except Exception:
                 pass
+        self._dirty = True
 
     def _on_show_in_finder(self, track_idx: int):
         file_path = str(Path(self._tracks[track_idx].file).resolve())
@@ -687,6 +704,7 @@ class MainWindow(QMainWindow):
         player.setPosition(int(pos))
         if was_playing:
             player.play()
+        self._dirty = True
 
     # ── stem split (via dialog) ───────────────────────────────────────────────
 
@@ -712,6 +730,7 @@ class MainWindow(QMainWindow):
                 color=track_color(idx),
             )
             self._add_track(data)
+        self._dirty = True
 
     # ── download ──────────────────────────────────────────────────────────────
 
@@ -746,6 +765,8 @@ class MainWindow(QMainWindow):
         return str(shutil.copy2(src_path, dst))
 
     def _close_project(self):
+        if not self._maybe_save():
+            return
         self._clear_tracks()
         self._current_project = None
         self.setWindowTitle("mutr")
@@ -876,6 +897,7 @@ class MainWindow(QMainWindow):
         }
         try:
             save_project(path, state)
+            self._dirty = False
             self.statusBar().showMessage(f"Saved to {path.name}", 3000)
         except Exception as e:
             QMessageBox.critical(self, "Save error", str(e))
@@ -1005,7 +1027,30 @@ class MainWindow(QMainWindow):
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
+    def _maybe_save(self) -> bool:
+        if not self._dirty:
+            return True
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Unsaved Changes")
+        msg.setText("Save changes before closing?")
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.Save)
+        reply = msg.exec()
+        if reply == QMessageBox.StandardButton.Save:
+            self._save_project()
+            return not self._dirty
+        elif reply == QMessageBox.StandardButton.Discard:
+            return True
+        return False
+
     def closeEvent(self, event):
+        if not self._maybe_save():
+            event.ignore()
+            return
         save_prefs(self._prefs)
         super().closeEvent(event)
 
