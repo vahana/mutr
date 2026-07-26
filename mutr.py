@@ -674,7 +674,7 @@ class MainWindow(QMainWindow):
         data = self._tracks[track_idx]
         proj_dir = self._project_dir()
         base_dir = proj_dir if proj_dir is not None else Path(data.source_file).parent
-        out_dir = str(base_dir / (Path(data.source_file).stem + "_tracks"))
+        out_dir = str(base_dir)
         dlg = SplitDialog(data.source_file, out_dir, parent=self)
         dlg.finished_stems.connect(self._on_stems_done)
         dlg.exec()
