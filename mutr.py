@@ -12,14 +12,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, QUrl
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QSize, QTimer, QUrl
+from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout,
+    QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QScrollArea, QSlider, QStatusBar, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QSlider, QSizePolicy, QStackedWidget,
+    QStatusBar, QVBoxLayout, QWidget,
 )
 
 from dialogs import DownloadDialog, PitchDialog, SplitDialog
@@ -79,16 +80,11 @@ class MainWindow(QMainWindow):
 
         outer.addLayout(self._build_topbar())
 
-        self._tracks_scroll = QScrollArea()
-        self._tracks_scroll.setWidgetResizable(True)
-        self._tracks_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._tracks_container = QWidget()
-        self._tracks_layout = QVBoxLayout(self._tracks_container)
-        self._tracks_layout.setSpacing(2)
-        self._tracks_layout.setContentsMargins(0, 0, 0, 0)
-        self._tracks_layout.addStretch()
-        self._tracks_scroll.setWidget(self._tracks_container)
-        outer.addWidget(self._tracks_scroll, stretch=1)
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_welcome())
+        self._stack.addWidget(self._build_tracks_page())
+        self._stack.setCurrentIndex(0)
+        outer.addWidget(self._stack, stretch=1)
 
         self._seek_slider = SeekSlider(Qt.Orientation.Horizontal)
         self._seek_slider.setRange(0, 0)
@@ -101,6 +97,79 @@ class MainWindow(QMainWindow):
 
         outer.addLayout(self._build_transport())
         self.setStatusBar(QStatusBar())
+
+    def _build_tracks_page(self) -> QWidget:
+        self._tracks_scroll = QScrollArea()
+        self._tracks_scroll.setWidgetResizable(True)
+        self._tracks_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._tracks_container = QWidget()
+        self._tracks_layout = QVBoxLayout(self._tracks_container)
+        self._tracks_layout.setSpacing(2)
+        self._tracks_layout.setContentsMargins(0, 0, 0, 0)
+        self._tracks_layout.addStretch()
+        self._tracks_scroll.setWidget(self._tracks_container)
+        return self._tracks_scroll
+
+    def _build_welcome(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title = QLabel("mutr")
+        title_font = QFont()
+        title_font.setPointSize(28)
+        title.setFont(title_font)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        layout.addSpacing(20)
+
+        self._welcome_grid = QGridLayout()
+        self._welcome_grid.setSpacing(12)
+        layout.addLayout(self._welcome_grid)
+        layout.addStretch()
+
+        self._refresh_welcome()
+        return w
+
+    def _refresh_welcome(self):
+        while self._welcome_grid.count():
+            child = self._welcome_grid.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        recents = self._prefs.get("recent_projects", [])
+        cols = 3
+        for i, path in enumerate(recents):
+            p = Path(path)
+            btn = QPushButton(p.parent.name if p.suffix == ".mutrproj" else p.name)
+            btn.setMinimumSize(QSize(180, 80))
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.clicked.connect(lambda checked, p2=path: self._open_recent(p2))
+            self._welcome_grid.addWidget(btn, i // cols, i % cols)
+
+        new_btn = QPushButton("+ New Project")
+        new_btn.setMinimumSize(QSize(180, 80))
+        new_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        new_btn.setStyleSheet("QPushButton { border: 2px dashed #888; }")
+        new_btn.clicked.connect(self._new_project)
+        idx = len(recents)
+        self._welcome_grid.addWidget(new_btn, idx // cols, idx % cols)
+
+    def _open_recent(self, path: str):
+        p = Path(path)
+        if p.suffix == ".mutrproj":
+            self._open_project(path)
+        else:
+            self._open_source_file(path)
+
+    def _show_tracks_page(self):
+        self._stack.setCurrentIndex(1)
+        self._seek_slider.setEnabled(True)
+        self._loop_bar.setEnabled(True)
+        self._play_btn.setEnabled(True)
+        self._stop_btn.setEnabled(True)
+        self._loop_btn.setEnabled(True)
 
     def _build_topbar(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -254,8 +323,7 @@ class MainWindow(QMainWindow):
         self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
 
         if idx == 0:
-            self._play_btn.setEnabled(True)
-            self._stop_btn.setEnabled(True)
+            self._show_tracks_page()
             self._seek_slider.setEnabled(True)
             self._loop_bar.setEnabled(True)
             self._loop_btn.setEnabled(True)
@@ -292,6 +360,7 @@ class MainWindow(QMainWindow):
         self._time_lbl.setText("0:00 / 0:00")
         self._solo_track = -1
         self._pre_solo_mutes = []
+        self._stack.setCurrentIndex(0)
 
     # ── playback sync ─────────────────────────────────────────────────────────
 
@@ -626,6 +695,7 @@ class MainWindow(QMainWindow):
         proj_dir.mkdir(parents=True)
         self._current_project = proj_dir / f"{name}.mutrproj"
         self.setWindowTitle(f"mutr — {proj_dir.name}")
+        self._show_tracks_page()
 
     def _open_source_file(self, path: str = ""):
         if not path:
@@ -754,6 +824,7 @@ class MainWindow(QMainWindow):
         update_recent(self._prefs, path)
         save_prefs(self._prefs)
         self._refresh_recent_menu()
+        self._refresh_welcome()
 
     def _refresh_recent_menu(self):
         self._recent_menu.clear()
