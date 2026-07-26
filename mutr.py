@@ -628,7 +628,21 @@ class MainWindow(QMainWindow):
                 pass
 
     def _on_track_renamed(self, track_idx: int, new_name: str):
-        self._tracks[track_idx].name = new_name
+        data = self._tracks[track_idx]
+        old_name = data.name
+        data.name = new_name
+        old_path = Path(data.file)
+        new_path = old_path.parent / (new_name + old_path.suffix)
+        if old_path.exists() and new_path != old_path:
+            try:
+                old_path.rename(new_path)
+                data.file = str(new_path)
+                if data.source_file == str(old_path):
+                    data.source_file = str(new_path)
+                player = self._players[track_idx][0]
+                player.setSource(QUrl.fromLocalFile(str(new_path)))
+            except Exception:
+                pass
 
     def _on_show_in_finder(self, track_idx: int):
         file_path = str(Path(self._tracks[track_idx].file).resolve())
