@@ -827,7 +827,21 @@ class MainWindow(QMainWindow):
         self._current_project = new_proj_file
         self._write_project(new_proj_file)
         self._update_recent(str(new_proj_file))
+        recents = self._prefs.get("recent_projects", [])
+        old_dir = str(proj_dir)
+        new_dir_s = str(new_dir)
+        cleaned = []
+        for r in recents:
+            if r.startswith(old_dir):
+                relocated = r.replace(old_dir, new_dir_s)
+                if Path(relocated).exists():
+                    cleaned.append(relocated)
+            else:
+                cleaned.append(r)
+        self._prefs["recent_projects"] = cleaned
+        save_prefs(self._prefs)
         self._refresh_welcome()
+        self._refresh_recent_menu()
         self.setWindowTitle(f"mutr — {name}")
 
     def _write_project(self, path: Path):
