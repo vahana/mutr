@@ -207,6 +207,8 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction("Open File…", self._open_source_file)
         self._file_menu.addAction("+ Add Track…", self._add_track_clicked)
         self._file_menu.addAction("Download…", self._open_downloader)
+        self._file_menu.addSeparator()
+        self._file_menu.addAction("Close", self._close_project)
         self._recent_menu = QMenu("Recent", self)
         self._file_menu.addMenu(self._recent_menu)
         self._file_menu.aboutToShow.connect(self._refresh_recent_menu)
@@ -723,6 +725,11 @@ class MainWindow(QMainWindow):
         if dst.exists() and dst.samefile(src_path):
             return str(dst)
         return str(shutil.copy2(src_path, dst))
+
+    def _close_project(self):
+        self._clear_tracks()
+        self._current_project = None
+        self.setWindowTitle("mutr")
 
     def _new_project(self):
         if self._tracks:
