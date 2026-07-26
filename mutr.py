@@ -791,10 +791,23 @@ class MainWindow(QMainWindow):
     def _save_project_as(self):
         proj_dir = self._project_dir()
         if proj_dir is None:
-            self._new_project()
-            if self._current_project is None:
+            name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text="My Project")
+            if not ok or not (name := name.strip()):
                 return
-            self._write_project(self._current_project)
+            projects_dir = Path.home() / ".mutr" / "projects"
+            projects_dir.mkdir(parents=True, exist_ok=True)
+            proj_dir = projects_dir / name
+            if proj_dir.exists():
+                QMessageBox.critical(self, "Error", f"Project \"{name}\" already exists.")
+                return
+            proj_dir.mkdir(parents=True)
+            proj_file = proj_dir / f"{name}.mutrproj"
+            self._current_project = proj_file
+            self._write_project(proj_file)
+            self._update_recent(str(proj_file))
+            self._refresh_welcome()
+            self._show_tracks_page()
+            self.setWindowTitle(f"mutr — {name}")
             return
         name, ok = QInputDialog.getText(self, "Save Project As", "Project name:", text=proj_dir.name)
         if not ok or not (name := name.strip()):
@@ -803,11 +816,16 @@ class MainWindow(QMainWindow):
         if new_dir.exists() and new_dir != proj_dir:
             QMessageBox.critical(self, "Error", f"Project \"{name}\" already exists.")
             return
+        old_proj_file = self._current_project
         proj_dir.rename(new_dir)
+        moved_old = new_dir / old_proj_file.name
         new_proj_file = new_dir / f"{name}.mutrproj"
+        if moved_old.exists() and moved_old != new_proj_file:
+            moved_old.rename(new_proj_file)
         self._current_project = new_proj_file
         self._write_project(new_proj_file)
         self._update_recent(str(new_proj_file))
+        self._refresh_welcome()
         self.setWindowTitle(f"mutr — {name}")
 
     def _write_project(self, path: Path):
