@@ -148,13 +148,36 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda checked, p2=path: self._open_recent(p2))
             self._welcome_grid.addWidget(btn, i // cols, i % cols)
 
+        idx = len(recents)
+
+        open_btn = QPushButton("Open…")
+        open_btn.setMinimumSize(QSize(180, 80))
+        open_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        open_btn.clicked.connect(self._open_from_welcome)
+        self._welcome_grid.addWidget(open_btn, idx // cols, idx % cols)
+        idx += 1
+
         new_btn = QPushButton("+ New Project")
         new_btn.setMinimumSize(QSize(180, 80))
         new_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         new_btn.setStyleSheet("QPushButton { border: 2px dashed #888; }")
         new_btn.clicked.connect(self._new_project)
-        idx = len(recents)
         self._welcome_grid.addWidget(new_btn, idx // cols, idx % cols)
+
+    def _open_from_welcome(self):
+        start_dir = self._prefs.get("last_project_dir", "") or str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open", start_dir,
+            "All supported (*.mutrproj *.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.flac *.m4a *.ogg);;"
+            "Projects (*.mutrproj);;Audio/Video (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.flac *.m4a *.ogg)",
+        )
+        if not path:
+            return
+        p = Path(path)
+        if p.suffix == ".mutrproj":
+            self._open_project(path)
+        else:
+            self._open_source_file(path)
 
     def _open_recent(self, path: str):
         p = Path(path)
