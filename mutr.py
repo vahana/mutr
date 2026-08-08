@@ -15,7 +15,6 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QSize, QTimer, QUrl
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
@@ -32,23 +31,6 @@ _STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
 _VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 
 
-class VideoWindow(QMainWindow):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("mutr — Video")
-        self.resize(640, 480)
-        self._video_widget = QVideoWidget()
-        self.setCentralWidget(self._video_widget)
-
-    @property
-    def video_widget(self) -> QVideoWidget:
-        return self._video_widget
-
-    def closeEvent(self, event):
-        event.ignore()
-        self.hide()
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -63,7 +45,7 @@ class MainWindow(QMainWindow):
         self._prefs = load_prefs()
         self._dragging = False
         self._pending_seek_ms: float = 0.0
-        self._video_window = VideoWindow(self)
+        self._expanded_video_track: int = -1
         self._solo_track: int = -1
         self._pre_solo_mutes: list[bool] = []
         self._dirty: bool = False
@@ -309,6 +291,7 @@ class MainWindow(QMainWindow):
             ("Up", lambda: self._seek_to_segment(-1)),
             ("Down", lambda: self._seek_to_segment(1)),
             ("D", self._delete_nearest_marker),
+            ("V", self._toggle_video),
         ]
         for key, slot in shortcuts:
             sc = QShortcut(QKeySequence(key), self)
@@ -320,6 +303,20 @@ class MainWindow(QMainWindow):
     def _add_track(self, data: TrackData, auto_play: bool = False):
         idx = len(self._tracks)
         self._tracks.append(data)
+
+        row = TrackRow(idx, data, default_video_height=self._prefs.get("video_height", 480))
+        row.mute_toggled.connect(self._on_mute)
+        row.volume_changed.connect(self._on_volume_changed)
+        row.pitch_shift_requested.connect(self._on_pitch_shift_requested)
+        row.split_requested.connect(self._on_split_requested)
+        row.remove_requested.connect(self._on_remove_track_requested)
+        row.name_changed.connect(self._on_track_renamed)
+        row.show_in_finder_requested.connect(self._on_show_in_finder)
+        row.show_video_requested.connect(self._on_show_video_for_track)
+        row.solo_requested.connect(self._on_solo)
+        row.video_resized.connect(self._on_video_resized)
+        self._track_rows.append(row)
+        self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
 
         player = QMediaPlayer()
         audio_out = QAudioOutput()
@@ -338,7 +335,7 @@ class MainWindow(QMainWindow):
         print(f"[video] _add_track idx={idx}, file={data.file}, is_video={is_vid}")
         if is_vid:
             print(f"[video] setting video output for player idx={idx} before setSource")
-            player.setVideoOutput(self._video_window.video_widget)
+            player.setVideoOutput(row.video_widget)
         player.setSource(QUrl.fromLocalFile(data.file))
 
         if idx > 0:
@@ -350,19 +347,6 @@ class MainWindow(QMainWindow):
             player.play()
 
         self._dirty = True
-
-        row = TrackRow(idx, data)
-        row.mute_toggled.connect(self._on_mute)
-        row.volume_changed.connect(self._on_volume_changed)
-        row.pitch_shift_requested.connect(self._on_pitch_shift_requested)
-        row.split_requested.connect(self._on_split_requested)
-        row.remove_requested.connect(self._on_remove_track_requested)
-        row.name_changed.connect(self._on_track_renamed)
-        row.show_in_finder_requested.connect(self._on_show_in_finder)
-        row.show_video_requested.connect(self._on_show_video_for_track)
-        row.solo_requested.connect(self._on_solo)
-        self._track_rows.append(row)
-        self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
 
         if idx == 0:
             self._show_tracks_page()
@@ -387,7 +371,7 @@ class MainWindow(QMainWindow):
             self._tracks_layout.removeWidget(row)
             row.deleteLater()
         self._track_rows.clear()
-        self._video_window.hide()
+        self._expanded_video_track = -1
         self._seek_slider.setRange(0, 0)
         self._seek_slider.setEnabled(False)
         self._loop_bar.set_total(0.0)
@@ -508,28 +492,32 @@ class MainWindow(QMainWindow):
         self._dragging = False
         self._sync_seek(float(self._seek_slider.value()))
 
-    # ── video window ──────────────────────────────────────────────────────────
+    # ── video ─────────────────────────────────────────────────────────────────
 
-    def _show_video_window(self):
-        print("[video] _show_video_window called")
-        self._video_window.show()
-        self._video_window.raise_()
-        QTimer.singleShot(100, self._attach_video_output)
+    def _on_video_resized(self, height: int):
+        self._prefs["video_height"] = height
+        save_prefs(self._prefs)
 
-    def _attach_video_output(self):
-        print(f"[video] _attach_video_output: players={len(self._players)}")
-        if self._players:
-            p = self._players[0][0]
-            print(f"[video] _attach_video_output: playbackState={p.playbackState()}, mediaStatus={p.mediaStatus()}, hasVideo={p.hasVideo()}, error={p.error()}, errorString={p.errorString()}")
-            p.setVideoOutput(self._video_window.video_widget)
-            print("[video] _attach_video_output done")
+    def _toggle_video(self):
+        for i, row in enumerate(self._track_rows):
+            if row._video_btn is not None:
+                self._on_show_video_for_track(i)
+                return
 
     def _on_show_video_for_track(self, track_idx: int):
+        if self._expanded_video_track == track_idx:
+            self._track_rows[track_idx].set_video_visible(False)
+            self._expanded_video_track = -1
+            return
+
+        if self._expanded_video_track >= 0 and self._expanded_video_track < len(self._track_rows):
+            self._track_rows[self._expanded_video_track].set_video_visible(False)
+
         p = self._players[track_idx][0]
-        print(f"[video] _on_show_video_for_track idx={track_idx}: hasVideo={p.hasVideo()}, error={p.error()}, errorString={p.errorString()}")
-        p.setVideoOutput(self._video_window.video_widget)
-        self._video_window.show()
-        self._video_window.raise_()
+        row = self._track_rows[track_idx]
+        p.setVideoOutput(row.video_widget)
+        row.set_video_visible(True)
+        self._expanded_video_track = track_idx
 
     # ── loop / segment ────────────────────────────────────────────────────────
 
@@ -656,6 +644,10 @@ class MainWindow(QMainWindow):
             self._pre_solo_mutes = []
         elif self._solo_track > track_idx:
             self._solo_track -= 1
+        if self._expanded_video_track == track_idx:
+            self._expanded_video_track = -1
+        elif self._expanded_video_track > track_idx:
+            self._expanded_video_track -= 1
         if delete_file:
             try:
                 Path(file_path).unlink(missing_ok=True)
@@ -950,6 +942,7 @@ class MainWindow(QMainWindow):
         self._prefs["last_project_dir"] = str(Path(path).parent)
         self._update_recent(path)
         self.setWindowTitle(f"mutr — {Path(path).parent.name}")
+        self._dirty = False
 
     # ── prefs / recent ────────────────────────────────────────────────────────
 
@@ -1003,6 +996,7 @@ class MainWindow(QMainWindow):
             ("← →", "Seek ±5 seconds"),
             ("↑ ↓", "Previous / next segment"),
             ("D", "Delete nearest marker"),
+            ("V", "Toggle video (first video track)"),
             ("Double-click loop bar", "Add marker (snaps to second)"),
             ("Double-click marker", "Remove that marker"),
             ("Drag marker", "Move marker"),

@@ -6,8 +6,10 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider, QVBoxLayout,
+    QWidget,
 )
 
 _TRACK_COLORS = [
@@ -164,6 +166,41 @@ class _ColorSwatch(QWidget):
 _VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 
 
+class _ResizeHandle(QWidget):
+    dragged = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(5)
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self._dragging = False
+        self._start_y = 0.0
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(40, 40, 40))
+        mid = self.height() // 2
+        p.setPen(QColor(100, 100, 100))
+        cx = self.width() // 2
+        for i in range(-10, 11, 4):
+            p.drawPoint(cx + i, mid)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._start_y = event.globalPosition().y()
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            delta = int(event.globalPosition().y() - self._start_y)
+            self._start_y = event.globalPosition().y()
+            self.dragged.emit(delta)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+
+
 class TrackRow(QWidget):
     mute_toggled = pyqtSignal(int, bool)
     volume_changed = pyqtSignal(int, float)
@@ -174,15 +211,26 @@ class TrackRow(QWidget):
     name_changed = pyqtSignal(int, str)
     show_in_finder_requested = pyqtSignal(int)
     show_video_requested = pyqtSignal(int)
+    video_resized = pyqtSignal(int)
 
     _ROW_H = 52
+    _DEFAULT_VIDEO_H = 480
+    _MIN_VIDEO_H = 100
 
-    def __init__(self, track_idx: int, data: TrackData, parent=None):
+    def __init__(self, track_idx: int, data: TrackData, default_video_height: int = 480, parent=None):
         super().__init__(parent)
         self._idx = track_idx
-        self.setFixedHeight(self._ROW_H)
+        self._video_height = default_video_height
+        self._video_visible = False
 
-        layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        controls = QWidget()
+        controls.setFixedHeight(self._ROW_H)
+        self._controls_layout = QHBoxLayout(controls)
+        layout = self._controls_layout
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(6)
 
@@ -200,10 +248,13 @@ class TrackRow(QWidget):
         is_video = Path(data.file).suffix.lower() in _VIDEO_EXTS
         if is_video:
             self._video_btn = QPushButton("👁")
+            self._video_btn.setCheckable(True)
             self._video_btn.setFixedSize(24, 24)
-            self._video_btn.setToolTip("Show video")
-            self._video_btn.clicked.connect(lambda: self.show_video_requested.emit(self._idx))
+            self._video_btn.setToolTip("Toggle video")
+            self._video_btn.toggled.connect(self._on_video_toggled)
             layout.addWidget(self._video_btn)
+        else:
+            self._video_btn = None
 
         self._solo_btn = QPushButton("S")
         self._solo_btn.setCheckable(True)
@@ -233,11 +284,52 @@ class TrackRow(QWidget):
         self._vol_lbl.setFixedWidth(36)
         layout.addWidget(self._vol_lbl)
 
+        main_layout.addWidget(controls)
+
+        self._video_widget = QVideoWidget()
+        self._video_widget.setMinimumHeight(self._MIN_VIDEO_H)
+
+        self._resize_handle = _ResizeHandle()
+        self._resize_handle.dragged.connect(self._on_resize_dragged)
+
+        self._video_container = QWidget()
+        self._video_container.setVisible(False)
+        vc_layout = QVBoxLayout(self._video_container)
+        vc_layout.setContentsMargins(0, 0, 0, 0)
+        vc_layout.setSpacing(0)
+        vc_layout.addWidget(self._video_widget)
+        vc_layout.addWidget(self._resize_handle)
+        main_layout.addWidget(self._video_container)
+
+        self.setFixedHeight(self._ROW_H)
+
         self._loader = _WaveformLoader(data.file)
         self._loader.ready.connect(self._waveform.set_samples)
         self._loader.start()
 
     # ── public API ────────────────────────────────────────────────────────────
+
+    @property
+    def video_widget(self) -> QVideoWidget:
+        return self._video_widget
+
+    def set_video_visible(self, visible: bool):
+        if self._video_btn is None:
+            return
+        self._video_visible = visible
+        self._video_container.setVisible(visible)
+        self._video_btn.blockSignals(True)
+        self._video_btn.setChecked(visible)
+        self._video_btn.blockSignals(False)
+        if visible:
+            total_h = self._ROW_H + self._video_height + self._resize_handle.height()
+            self.setFixedHeight(total_h)
+            self._video_widget.setFixedHeight(self._video_height)
+        else:
+            self.setFixedHeight(self._ROW_H)
+
+    def is_video_visible(self) -> bool:
+        return self._video_visible
 
     def cleanup(self):
         try:
@@ -293,7 +385,7 @@ class TrackRow(QWidget):
         self._name_edit.setFocus()
         self._name_edit.returnPressed.connect(self._finish_rename)
         self._name_edit.editingFinished.connect(self._finish_rename)
-        self.layout().replaceWidget(self._name_lbl, self._name_edit)
+        self._controls_layout.replaceWidget(self._name_lbl, self._name_edit)
         self._name_lbl.hide()
 
     def _finish_rename(self):
@@ -303,12 +395,22 @@ class TrackRow(QWidget):
         if new_name:
             self._name_lbl.setText(new_name)
             self.name_changed.emit(self._idx, new_name)
-        self.layout().replaceWidget(self._name_edit, self._name_lbl)
+        self._controls_layout.replaceWidget(self._name_edit, self._name_lbl)
         self._name_edit.deleteLater()
         self._name_edit = None
         self._name_lbl.show()
 
     # ── private slots ─────────────────────────────────────────────────────────
+
+    def _on_video_toggled(self, checked: bool):
+        self.show_video_requested.emit(self._idx)
+
+    def _on_resize_dragged(self, delta: int):
+        self._video_height = max(self._MIN_VIDEO_H, self._video_height + delta)
+        self._video_widget.setFixedHeight(self._video_height)
+        total_h = self._ROW_H + self._video_height + self._resize_handle.height()
+        self.setFixedHeight(total_h)
+        self.video_resized.emit(self._video_height)
 
     def _on_mute(self, on: bool):
         self._mute_btn.setStyleSheet("background: #8b0000; color: white;" if on else "")
