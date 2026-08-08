@@ -246,14 +246,17 @@ class MainWindow(QMainWindow):
         row.addStretch()
 
         row.addWidget(QLabel("Speed"))
-        self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(25, 150)
-        self._speed_slider.setValue(100)
-        self._speed_slider.setFixedWidth(120)
+        self._speed_val = 100
+        self._speed_btn_down = QPushButton("−")
+        self._speed_btn_down.setFixedWidth(24)
+        self._speed_btn_up = QPushButton("+")
+        self._speed_btn_up.setFixedWidth(24)
         self._speed_lbl = QLabel("1.00×")
         self._speed_lbl.setFixedWidth(38)
-        row.addWidget(self._speed_slider)
+        self._speed_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self._speed_btn_down)
         row.addWidget(self._speed_lbl)
+        row.addWidget(self._speed_btn_up)
         row.addSpacing(12)
 
         row.addWidget(QLabel("Vol"))
@@ -275,7 +278,8 @@ class MainWindow(QMainWindow):
         self._play_btn.clicked.connect(self._toggle_play)
         self._stop_btn.clicked.connect(self._stop)
         self._loop_btn.toggled.connect(self._on_loop_toggled)
-        self._speed_slider.valueChanged.connect(self._on_speed)
+        self._speed_btn_down.clicked.connect(lambda: self._on_speed_step(-10))
+        self._speed_btn_up.clicked.connect(lambda: self._on_speed_step(10))
         self._master_vol.valueChanged.connect(self._on_master_volume)
         self._seek_slider.sliderPressed.connect(lambda: setattr(self, "_dragging", True))
         self._seek_slider.sliderReleased.connect(self._on_seek_released)
@@ -286,8 +290,8 @@ class MainWindow(QMainWindow):
         shortcuts = [
             ("Space", self._toggle_play),
             ("L", self._loop_btn.toggle),
-            ("Left", lambda: self._seek_by_seconds(-5)),
-            ("Right", lambda: self._seek_by_seconds(5)),
+            ("Left", lambda: self._seek_by_seconds(-1)),
+            ("Right", lambda: self._seek_by_seconds(1)),
             ("Up", lambda: self._seek_to_segment(-1)),
             ("Down", lambda: self._seek_to_segment(1)),
             ("D", self._delete_nearest_marker),
@@ -477,8 +481,9 @@ class MainWindow(QMainWindow):
             p0 = self._players[0][0]
             print(f"[video] LoadedMedia: hasVideo={p0.hasVideo()}, duration={p0.duration()}, error={p0.error()}, errorString={p0.errorString()}")
             if self._pending_seek_ms > 0:
-                QTimer.singleShot(100, lambda: self._sync_seek(self._pending_seek_ms))
+                seek_ms = self._pending_seek_ms
                 self._pending_seek_ms = 0.0
+                QTimer.singleShot(100, lambda ms=seek_ms: self._sync_seek(ms))
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
             if self._loop_btn.isChecked():
                 bounds = self._loop_bar.get_segment_bounds(self._loop_bar._active_segment)
@@ -577,8 +582,9 @@ class MainWindow(QMainWindow):
         self._apply_volume(track_idx)
         self._dirty = True
 
-    def _on_speed(self, value: int):
-        rate = value / 100.0
+    def _on_speed_step(self, delta: int):
+        self._speed_val = max(10, min(100, self._speed_val + delta))
+        rate = self._speed_val / 100.0
         self._speed_lbl.setText(f"{rate:.2f}×")
         self._sync_rate(rate)
         self._dirty = True
@@ -887,9 +893,10 @@ class MainWindow(QMainWindow):
             "markers": list(self._loop_bar._markers),
             "active_segment": self._loop_bar._active_segment,
             "loop_enabled": self._loop_btn.isChecked(),
-            "speed": self._speed_slider.value(),
+            "speed": self._speed_val,
             "master_volume": self._master_vol.value(),
             "position_ms": self._current_pos(),
+            "expanded_video_track": self._expanded_video_track,
         }
         try:
             save_project(path, state)
@@ -915,6 +922,10 @@ class MainWindow(QMainWindow):
         self._clear_tracks()
         self._current_project = Path(path)
 
+        pos = state.get("position_ms", 0.0)
+        if pos > 0:
+            self._pending_seek_ms = pos
+
         for i, t in enumerate(state["tracks"]):
             if not Path(t["file"]).exists():
                 QMessageBox.warning(self, "Missing file",
@@ -928,18 +939,23 @@ class MainWindow(QMainWindow):
         if state.get("active_segment", -1) >= 0:
             self._loop_bar.set_active_segment(state["active_segment"])
 
-        self._speed_slider.setValue(state.get("speed", 100))
+        saved_speed = state.get("speed", 100)
+        self._speed_val = saved_speed
+        self._speed_lbl.setText(f"{saved_speed / 100.0:.2f}×")
+        self._sync_rate(saved_speed / 100.0)
         self._master_vol.setValue(state.get("master_volume", 80))
 
         if state.get("loop_enabled", False):
             self._loop_btn.setChecked(True)
             self._loop_bar.set_loop_active(True)
 
-        pos = state.get("position_ms", 0.0)
-        if pos > 0:
-            self._pending_seek_ms = pos
+        expanded = state.get("expanded_video_track", -1)
+        if expanded >= 0 and expanded < len(self._track_rows):
+            self._on_show_video_for_track(expanded)
 
         self._prefs["last_project_dir"] = str(Path(path).parent)
+        self._prefs["last_project"] = str(path)
+        save_prefs(self._prefs)
         self._update_recent(path)
         self.setWindowTitle(f"mutr — {Path(path).parent.name}")
         self._dirty = False
@@ -993,7 +1009,7 @@ class MainWindow(QMainWindow):
         rows = [
             ("Space", "Play / Pause"),
             ("L", "Toggle loop on selected segment"),
-            ("← →", "Seek ±5 seconds"),
+            ("← →", "Seek ±1 second"),
             ("↑ ↓", "Previous / next segment"),
             ("D", "Delete nearest marker"),
             ("V", "Toggle video (first video track)"),
@@ -1062,6 +1078,10 @@ def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         QTimer.singleShot(0, lambda: win._add_track_file(arg))
+    else:
+        last = win._prefs.get("last_project")
+        if last and Path(last).exists():
+            QTimer.singleShot(100, lambda: win._open_project(last))
 
     sys.exit(app.exec())
 
