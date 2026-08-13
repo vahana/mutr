@@ -1071,6 +1071,10 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         save_prefs(self._prefs)
+        try:
+            self._clear_tracks()
+        except Exception:
+            pass
         super().closeEvent(event)
 
 

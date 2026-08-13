@@ -97,6 +97,12 @@ class PitchDialog(QDialog):
         self._status.setText("")
         QMessageBox.critical(self, "Pitch shift error", msg)
 
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.cancel()
+            self._worker.wait()
+        super().closeEvent(event)
+
 
 _MODELS = [
     ("htdemucs",      "Demucs (4 stems, default)"),
@@ -183,6 +189,12 @@ class SplitDialog(QDialog):
         self._status.setText("")
         QMessageBox.critical(self, "Stem separation error", msg)
 
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.cancel()
+            self._worker.wait()
+        super().closeEvent(event)
+
 
 class DownloadDialog(QDialog):
     file_ready = pyqtSignal(str)
@@ -266,3 +278,9 @@ class DownloadDialog(QDialog):
         self._btn.setEnabled(True)
         self._status.setText("")
         QMessageBox.critical(self, "Download error", msg)
+
+    def closeEvent(self, event):
+        if self._worker is not None:
+            self._worker.cancel()
+            self._worker.wait()
+        super().closeEvent(event)
