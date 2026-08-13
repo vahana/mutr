@@ -21,19 +21,35 @@ class DownloadWorker(QThread):
     def run(self):
         try:
             yt_dlp = _require("yt-dlp")
-            self.progress.emit("Downloading…")
-            subprocess.run(
+            proc = subprocess.Popen(
                 [yt_dlp, self.url,
                  "-f", "bestvideo[vcodec!^=av01][height<=1080]+bestaudio"
                        "/bestvideo[height<=1080]+bestaudio"
                        "/best[height<=1080]/best",
                  "--merge-output-format", "mkv",
+                 "--newline",
                  "-o", self.out_path],
-                check=True, capture_output=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True,
             )
+            tail = []
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                tail.append(line)
+                del tail[:-20]
+                if "[download]" in line or "Merging" in line or "[Merger]" in line:
+                    self.progress.emit(line)
+            proc.wait()
+            if proc.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    proc.returncode, proc.args,
+                    output="\n".join(tail),
+                )
             self.finished.emit(self.out_path)
         except subprocess.CalledProcessError as e:
-            stderr = e.stderr.decode(errors="replace") if e.stderr else ""
+            stderr = e.output or ""
             self.error.emit(f"Download failed:\n{stderr}")
         except Exception as e:
             self.error.emit(str(e))
