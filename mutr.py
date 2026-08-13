@@ -7,6 +7,7 @@
 # ]
 # ///
 
+import os
 import shutil
 import subprocess
 import sys
@@ -1079,6 +1080,7 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     win = MainWindow()
