@@ -50,57 +50,6 @@ class _ProcessWorker(QThread):
                 raise _Cancelled()
 
 
-class DownloadWorker(_ProcessWorker):
-    progress = pyqtSignal(str)
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def __init__(self, url: str, out_path: str):
-        super().__init__()
-        self.url = url
-        self.out_path = out_path
-
-    def run(self):
-        try:
-            yt_dlp = _require("yt-dlp")
-            proc = self._start_proc(
-                [yt_dlp, self.url,
-                 "-f", "bestvideo[vcodec!^=av01][height<=1080]+bestaudio"
-                       "/bestvideo[height<=1080]+bestaudio"
-                       "/best[height<=1080]/best",
-                 "--merge-output-format", "mkv",
-                 "--newline",
-                 "-o", self.out_path],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True,
-            )
-            tail = []
-            for line in proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                tail.append(line)
-                del tail[:-20]
-                if "[download]" in line or "Merging" in line or "[Merger]" in line:
-                    self.progress.emit(line)
-            proc.wait()
-            self._finish_proc()
-            if proc.returncode != 0:
-                raise subprocess.CalledProcessError(
-                    proc.returncode, proc.args,
-                    output="\n".join(tail),
-                )
-            self.finished.emit(self.out_path)
-        except _Cancelled:
-            pass
-        except subprocess.CalledProcessError as e:
-            stderr = e.output or ""
-            self.error.emit(f"Download failed:\n{stderr}")
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-
 def _require(tool: str) -> str:
     path = shutil.which(tool)
     if not path:

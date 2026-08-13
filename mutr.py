@@ -3,7 +3,6 @@
 # requires-python = "==3.13.*"
 # dependencies = [
 #   "PyQt6>=6.6.0",
-#   "yt-dlp>=2024.1.0",
 # ]
 # ///
 
@@ -23,7 +22,7 @@ from PyQt6.QtWidgets import (
     QStatusBar, QVBoxLayout, QWidget,
 )
 
-from dialogs import DownloadDialog, PitchDialog, SplitDialog
+from dialogs import PitchDialog, SplitDialog
 from loop_bar import LoopBar, SeekSlider, _ms_to_str
 from project import load_prefs, load_project, save_prefs, save_project, update_recent
 from track import TrackData, TrackRow, track_color
@@ -203,7 +202,6 @@ class MainWindow(QMainWindow):
         self._file_menu.addAction("Save As…", self._save_project_as)
         self._file_menu.addSeparator()
         self._file_menu.addAction("Add Track…", self._add_track_file)
-        self._file_menu.addAction("Download…", self._open_downloader)
         self._file_menu.addSeparator()
         self._file_menu.addAction("Close", self._close_project)
         self._recent_menu = QMenu("Recent", self)
@@ -739,19 +737,6 @@ class MainWindow(QMainWindow):
             )
             self._add_track(data)
         self._dirty = True
-
-    # ── download ──────────────────────────────────────────────────────────────
-
-    def _open_downloader(self):
-        proj_dir = self._project_dir()
-        start_dir = str(proj_dir) if proj_dir is not None else self._prefs.get("last_audio_dir", str(Path.home() / "Downloads"))
-        dlg = DownloadDialog(start_dir=start_dir, parent=self)
-        dlg.file_ready.connect(self._on_download_done)
-        dlg.exec()
-
-    def _on_download_done(self, path: str):
-        self._prefs["last_audio_dir"] = str(Path(path).parent)
-        self._add_track_file(path)
 
     # ── project ───────────────────────────────────────────────────────────────
 

@@ -1,14 +1,12 @@
-import shutil
-import subprocess
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
+    QComboBox, QDialog, QHBoxLayout, QLabel,
+    QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
 )
 
-from workers import DownloadWorker, PitchWorker, StemWorker, _AUDIO_EXTS
+from workers import PitchWorker, StemWorker, _AUDIO_EXTS
 
 
 class PitchDialog(QDialog):
@@ -196,91 +194,3 @@ class SplitDialog(QDialog):
         super().closeEvent(event)
 
 
-class DownloadDialog(QDialog):
-    file_ready = pyqtSignal(str)
-
-    def __init__(self, start_dir: str = "", parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Download from YouTube")
-        self.setMinimumWidth(460)
-        self._start_dir = start_dir or str(Path.home() / "Downloads")
-        self._worker = None
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
-
-        self._url_edit = QLineEdit()
-        self._url_edit.setPlaceholderText("YouTube URL")
-        layout.addWidget(self._url_edit)
-
-        self._btn = QPushButton("Download")
-        self._btn.clicked.connect(self._on_go)
-        layout.addWidget(self._btn)
-
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 0)
-        self._progress.setVisible(False)
-        layout.addWidget(self._progress)
-
-        self._status = QLabel("")
-        self._status.setWordWrap(True)
-        layout.addWidget(self._status)
-
-    def _on_go(self):
-        url = self._url_edit.text().strip()
-        if not url:
-            QMessageBox.warning(self, "mutr", "Paste a YouTube URL first.")
-            return
-
-        self._status.setText("Fetching title…")
-        QApplication.processEvents()
-        try:
-            yt_dlp = shutil.which("yt-dlp")
-            if yt_dlp:
-                result = subprocess.run(
-                    [yt_dlp, "--print", "title", "--no-download", url],
-                    capture_output=True, text=True, timeout=15,
-                )
-                raw_title = result.stdout.strip() or "video"
-            else:
-                raw_title = "video"
-        except Exception:
-            raw_title = "video"
-        self._status.setText("")
-
-        safe = "".join(c if c.isalnum() or c in " -_()" else "_" for c in raw_title).strip()
-        out_path, _ = QFileDialog.getSaveFileName(
-            self, "Save download", str(Path(self._start_dir) / f"{safe}.mkv"),
-            "Video (*.mkv)",
-        )
-        if not out_path:
-            return
-
-        self._btn.setEnabled(False)
-        self._progress.setVisible(True)
-
-        self._worker = DownloadWorker(url, out_path)
-        self._worker.progress.connect(self._status.setText)
-        self._worker.finished.connect(self._on_done)
-        self._worker.error.connect(self._on_error)
-        self._worker.start()
-
-    def _on_done(self, path: str):
-        self._progress.setVisible(False)
-        self._btn.setEnabled(True)
-        self._status.setText("Done.")
-        self.file_ready.emit(path)
-        self.accept()
-
-    def _on_error(self, msg: str):
-        self._progress.setVisible(False)
-        self._btn.setEnabled(True)
-        self._status.setText("")
-        QMessageBox.critical(self, "Download error", msg)
-
-    def closeEvent(self, event):
-        if self._worker is not None:
-            self._worker.cancel()
-            self._worker.wait()
-        super().closeEvent(event)
