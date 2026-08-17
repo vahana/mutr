@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSize, QTimer, QUrl
+from PyQt6.QtCore import Qt, QPoint, QSize, QTimer, QUrl
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PyQt6.QtWidgets import (
@@ -93,8 +93,16 @@ class MainWindow(QMainWindow):
 
     def _sync_bottom_margin(self, *_):
         sb = self._tracks_scroll.verticalScrollBar()
-        right = sb.width() if sb.maximum() > 0 else 0
-        self._bottom_layout.setContentsMargins(0, 0, right, 0)
+        sb_w = sb.width() if sb.maximum() > 0 else 0
+        left = 0
+        trailing = 0
+        if self._track_rows:
+            row = self._track_rows[0]
+            wave = row.waveform
+            tl = wave.mapTo(self._tracks_container, QPoint(0, 0))
+            left = tl.x()
+            trailing = self._tracks_container.width() - (tl.x() + wave.width())
+        self._bottom_layout.setContentsMargins(left, 0, trailing + sb_w, 0)
 
     def _build_tracks_page(self) -> QWidget:
         self._tracks_scroll = QScrollArea()
@@ -379,6 +387,8 @@ class MainWindow(QMainWindow):
             self._loop_bar.setEnabled(True)
             self._loop_btn.setEnabled(True)
 
+        QTimer.singleShot(0, self._sync_bottom_margin)
+
     def _clear_tracks(self):
         if self._players:
             p0 = self._players[0][0]
@@ -412,6 +422,7 @@ class MainWindow(QMainWindow):
         self._pre_solo_mutes = []
         self._dirty = False
         self._stack.setCurrentIndex(0)
+        QTimer.singleShot(0, self._sync_bottom_margin)
 
     # ── playback sync ─────────────────────────────────────────────────────────
 
@@ -688,6 +699,7 @@ class MainWindow(QMainWindow):
             self._expanded_video_track = -1
         elif self._expanded_video_track > track_idx:
             self._expanded_video_track -= 1
+        QTimer.singleShot(0, self._sync_bottom_margin)
         if delete_file:
             try:
                 Path(file_path).unlink(missing_ok=True)
@@ -1081,6 +1093,11 @@ class MainWindow(QMainWindow):
         elif reply == QMessageBox.StandardButton.Discard:
             return True
         return False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_bottom_layout"):
+            self._sync_bottom_margin()
 
     def closeEvent(self, event):
         if not self._maybe_save():

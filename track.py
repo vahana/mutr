@@ -320,6 +320,10 @@ class TrackRow(QWidget):
     # ── public API ────────────────────────────────────────────────────────────
 
     @property
+    def waveform(self) -> _WaveformWidget:
+        return self._waveform
+
+    @property
     def video_widget(self) -> QVideoWidget:
         return self._video_widget
 
