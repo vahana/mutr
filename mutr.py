@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QSize, QTimer, QUrl
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
-from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PyQt6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
@@ -290,6 +290,8 @@ class MainWindow(QMainWindow):
         self._loop_bar.seek_requested.connect(self._sync_seek)
         self._loop_bar.segment_selected.connect(self._on_segment_selected)
         self._loop_bar.markers_changed.connect(self._on_markers_changed)
+        self._media_devices = QMediaDevices()
+        self._media_devices.audioOutputsChanged.connect(self._on_audio_outputs_changed)
 
         shortcuts = [
             ("Space", self._toggle_play),
@@ -413,6 +415,11 @@ class MainWindow(QMainWindow):
     def _sync_rate(self, rate: float):
         for p, _ in self._players:
             p.setPlaybackRate(rate)
+
+    def _on_audio_outputs_changed(self):
+        dev = QMediaDevices.defaultAudioOutput()
+        for _, audio_out in self._players:
+            audio_out.setDevice(dev)
 
     def _apply_volume(self, idx: int):
         if idx >= len(self._players):
