@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         self._pre_solo_mutes: list[bool] = []
         self._dirty: bool = False
         self._controls_collapsed: bool = False
-        self._panel_width: int = 210
+        self._panel_width: int = 240
 
         self._build_ui()
         self._connect_signals()
@@ -127,7 +127,6 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(0)
         outer.addWidget(self._stack, stretch=1)
 
-        outer.addLayout(self._build_transport())
         self.setStatusBar(QStatusBar())
 
     def _sync_heights(self):
@@ -152,7 +151,7 @@ class MainWindow(QMainWindow):
             self._tracks_split.setSizes([total, 0])
             self._controls_collapsed = True
         else:
-            w = self._panel_width if self._panel_width > 0 else 210
+            w = self._panel_width if self._panel_width > 0 else 240
             self._tracks_split.setSizes([max(50, total - w), w])
             self._controls_collapsed = False
         self._tracks_split.set_collapsed_visual(self._controls_collapsed)
@@ -180,6 +179,8 @@ class MainWindow(QMainWindow):
         self._tracks_scroll.setWidget(self._tracks_container)
         left_layout.addWidget(self._tracks_scroll, stretch=1)
 
+        left_layout.addWidget(self._build_transport())
+
         self._loop_bar = LoopBar()
         self._loop_bar.setEnabled(False)
         loop_container = QWidget()
@@ -198,7 +199,7 @@ class MainWindow(QMainWindow):
 
         right_col = QWidget()
         right_col.setMinimumWidth(0)
-        right_col.setStyleSheet("background: #f7f7f7;")
+        right_col.setStyleSheet("background: #dcdcdc;")
         right_layout = QVBoxLayout(right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
@@ -209,7 +210,7 @@ class MainWindow(QMainWindow):
         self._panels_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._panels_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         panels_container = QWidget()
-        panels_container.setStyleSheet("background: #f7f7f7;")
+        panels_container.setStyleSheet("background: #dcdcdc;")
         self._panels_layout = QVBoxLayout(panels_container)
         self._panels_layout.setSpacing(2)
         self._panels_layout.setContentsMargins(0, 0, 0, 0)
@@ -217,7 +218,7 @@ class MainWindow(QMainWindow):
         self._loop_panel = QFrame()
         self._loop_panel.setObjectName("controlsPanel")
         self._loop_panel.setStyleSheet(
-            "QFrame#controlsPanel { background: #f7f7f7;"
+            "QFrame#controlsPanel { background: #dcdcdc;"
             " border: 1px solid #c8c8c8; border-radius: 4px; }")
         self._loop_panel.setFixedHeight(LoopBar._BAR_H + LoopBar._LABEL_H)
         lp = QHBoxLayout(self._loop_panel)
@@ -245,7 +246,7 @@ class MainWindow(QMainWindow):
         self._tracks_split.setStretchFactor(1, 0)
         self._tracks_split.setCollapsible(0, False)
         self._tracks_split.setCollapsible(1, True)
-        self._tracks_split.setSizes([700, 210])
+        self._tracks_split.setSizes([700, 240])
 
         return self._tracks_split
 
@@ -373,53 +374,88 @@ class MainWindow(QMainWindow):
         row.addWidget(self._help_btn)
         return row
 
-    def _build_transport(self) -> QHBoxLayout:
-        row = QHBoxLayout()
+    def _build_transport(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("transportBar")
+        bar.setStyleSheet(
+            "QFrame#transportBar { background: #dcdcdc; border-radius: 6px; }"
+        )
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(12, 6, 12, 6)
+        row.setSpacing(8)
 
-        self._play_btn = QPushButton("▶")
-        self._play_btn.setFixedWidth(40)
-        self._play_btn.setEnabled(False)
-        row.addWidget(self._play_btn)
-
-        self._stop_btn = QPushButton("■")
-        self._stop_btn.setFixedWidth(32)
-        self._stop_btn.setEnabled(False)
-        row.addWidget(self._stop_btn)
-
-        self._time_lbl = QLabel("0:00 / 0:00")
-        row.addWidget(self._time_lbl)
-
-        row.addStretch()
-
-        row.addWidget(QLabel("Speed"))
+        speed_lbl = QLabel("Speed")
+        speed_font = speed_lbl.font()
+        speed_font.setPointSize(14)
+        speed_lbl.setFont(speed_font)
+        row.addWidget(speed_lbl)
         self._speed_val = 100
         self._speed_btn_down = QPushButton("−")
-        self._speed_btn_down.setFixedWidth(24)
+        self._speed_btn_down.setFixedSize(36, 40)
         self._speed_btn_up = QPushButton("+")
-        self._speed_btn_up.setFixedWidth(24)
+        self._speed_btn_up.setFixedSize(36, 40)
         self._speed_btn_max = QPushButton("⏩")
-        self._speed_btn_max.setFixedWidth(24)
+        self._speed_btn_max.setFixedSize(36, 40)
         self._speed_btn_max.setToolTip("Reset to 100%")
+        for b in (self._speed_btn_down, self._speed_btn_up, self._speed_btn_max):
+            f = b.font()
+            f.setPointSize(15)
+            b.setFont(f)
         self._speed_lbl = QLabel("1.00×")
-        self._speed_lbl.setFixedWidth(38)
+        self._speed_lbl.setFixedWidth(60)
         self._speed_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        speed_val_font = self._speed_lbl.font()
+        speed_val_font.setPointSize(15)
+        self._speed_lbl.setFont(speed_val_font)
         row.addWidget(self._speed_btn_down)
         row.addWidget(self._speed_lbl)
         row.addWidget(self._speed_btn_up)
         row.addWidget(self._speed_btn_max)
-        row.addSpacing(12)
 
-        row.addWidget(QLabel("Vol"))
+        row.addStretch()
+
+        self._play_btn = QPushButton("▶")
+        self._play_btn.setFixedSize(64, 44)
+        self._play_btn.setEnabled(False)
+        play_font = self._play_btn.font()
+        play_font.setPointSize(18)
+        self._play_btn.setFont(play_font)
+        row.addWidget(self._play_btn)
+
+        self._stop_btn = QPushButton("■")
+        self._stop_btn.setFixedSize(48, 44)
+        self._stop_btn.setEnabled(False)
+        stop_font = self._stop_btn.font()
+        stop_font.setPointSize(14)
+        self._stop_btn.setFont(stop_font)
+        row.addWidget(self._stop_btn)
+
+        self._time_lbl = QLabel("0:00 / 0:00")
+        time_font = self._time_lbl.font()
+        time_font.setPointSize(15)
+        self._time_lbl.setFont(time_font)
+        row.addWidget(self._time_lbl)
+
+        row.addStretch()
+
+        vol_lbl = QLabel("Vol")
+        vol_font = vol_lbl.font()
+        vol_font.setPointSize(14)
+        vol_lbl.setFont(vol_font)
+        row.addWidget(vol_lbl)
         self._master_vol = QSlider(Qt.Orientation.Horizontal)
         self._master_vol.setRange(0, 100)
         self._master_vol.setValue(80)
-        self._master_vol.setFixedWidth(100)
+        self._master_vol.setFixedSize(150, 40)
         self._master_vol_lbl = QLabel("80%")
-        self._master_vol_lbl.setFixedWidth(36)
+        self._master_vol_lbl.setFixedWidth(54)
+        vol_val_font = self._master_vol_lbl.font()
+        vol_val_font.setPointSize(15)
+        self._master_vol_lbl.setFont(vol_val_font)
         row.addWidget(self._master_vol)
         row.addWidget(self._master_vol_lbl)
 
-        return row
+        return bar
 
     # ── signal wiring ─────────────────────────────────────────────────────────
 
@@ -1189,14 +1225,17 @@ class MainWindow(QMainWindow):
             ("Space", "Play / Pause"),
             ("L", "Toggle loop on selected segment"),
             ("← →", "Seek ±1 second"),
-            ("↑ ↓", "Previous / next segment"),
+            ("↑", "Replay segment start / previous segment"),
+            ("↓", "Next segment"),
             ("D", "Delete nearest marker"),
             ("V", "Toggle video (first video track)"),
             ("C", "Show/hide controls panel"),
+            ("Click waveform", "Seek to position"),
+            ("Click ⚙", "Track actions: Pitch Shift, Split Stems, …"),
+            ("Click panel divider", "Show/hide controls panel"),
             ("Double-click loop bar", "Add marker (snaps to second)"),
             ("Double-click marker", "Remove that marker"),
             ("Drag marker", "Move marker"),
-            ("Right-click main track", "Pitch Shift… / Split Stems…"),
         ]
         for key, desc in rows:
             row_w = QWidget()

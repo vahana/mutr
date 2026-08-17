@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QPoint, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
@@ -305,7 +305,7 @@ class TrackRow(QWidget):
         self._controls_panel = QFrame()
         self._controls_panel.setObjectName("controlsPanel")
         self._controls_panel.setStyleSheet(
-            "QFrame#controlsPanel { background: #f7f7f7;"
+            "QFrame#controlsPanel { background: #dcdcdc;"
             " border: 1px solid #c8c8c8; border-radius: 4px; }"
         )
         self._controls_panel.setFixedHeight(self._ROW_H)
@@ -359,6 +359,17 @@ class TrackRow(QWidget):
         self._vol_lbl = QLabel(f"{int(data.volume * 100)}%")
         self._vol_lbl.setFixedWidth(36)
         inner.addWidget(self._vol_lbl)
+
+        inner.addStretch()
+
+        self._menu_btn = QPushButton("⚙")
+        self._menu_btn.setFixedSize(24, 24)
+        self._menu_btn.setToolTip("Track actions")
+        menu_font = self._menu_btn.font()
+        menu_font.setPointSize(16)
+        self._menu_btn.setFont(menu_font)
+        self._menu_btn.clicked.connect(self._show_menu)
+        inner.addWidget(self._menu_btn)
 
         self._loader = _WaveformLoader(data.file)
         self._loader.ready.connect(self._waveform.set_samples)
@@ -427,9 +438,9 @@ class TrackRow(QWidget):
         self._solo_btn.blockSignals(False)
         self._solo_btn.setStyleSheet("background: #7a6a00; color: #ffe066;" if on else "")
 
-    # ── context menu ──────────────────────────────────────────────────────────
+    # ── track actions menu ────────────────────────────────────────────────────
 
-    def contextMenuEvent(self, event):
+    def _show_menu(self):
         menu = QMenu(self)
         pitch_act = menu.addAction("Pitch Shift…")
         split_act = menu.addAction("Split Stems…")
@@ -437,7 +448,8 @@ class TrackRow(QWidget):
         finder_act = menu.addAction("Show in Finder")
         menu.addSeparator()
         remove_act = menu.addAction("Remove Track")
-        act = menu.exec(event.globalPos())
+        pos = self._menu_btn.mapToGlobal(QPoint(0, self._menu_btn.height()))
+        act = menu.exec(pos)
         if act is None:
             return
         if act == pitch_act:
