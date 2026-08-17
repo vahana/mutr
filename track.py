@@ -312,6 +312,14 @@ class TrackRow(QWidget):
         panel_layout = QHBoxLayout(self._controls_panel)
         panel_layout.setContentsMargins(5, 2, 5, 2)
         panel_layout.setSpacing(6)
+        inner = panel_layout
+
+        self._panel_cell = QWidget()
+        cell_layout = QVBoxLayout(self._panel_cell)
+        cell_layout.setContentsMargins(0, 0, 0, 0)
+        cell_layout.setSpacing(0)
+        cell_layout.addWidget(self._controls_panel)
+        cell_layout.addStretch()
 
         is_video = Path(data.file).suffix.lower() in _VIDEO_EXTS
         if is_video:
@@ -350,7 +358,7 @@ class TrackRow(QWidget):
 
         self._vol_lbl = QLabel(f"{int(data.volume * 100)}%")
         self._vol_lbl.setFixedWidth(36)
-        panel_layout.addWidget(self._vol_lbl)
+        inner.addWidget(self._vol_lbl)
 
         self._loader = _WaveformLoader(data.file)
         self._loader.ready.connect(self._waveform.set_samples)
@@ -369,6 +377,10 @@ class TrackRow(QWidget):
     @property
     def controls_panel(self) -> QFrame:
         return self._controls_panel
+
+    @property
+    def panel_cell(self) -> QWidget:
+        return self._panel_cell
 
     @property
     def video_widget(self) -> QVideoWidget:

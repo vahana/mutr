@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
 
     def _sync_heights(self):
         for row in self._track_rows:
-            row.controls_panel.setFixedHeight(row.left_widget.height())
+            row.panel_cell.setFixedHeight(row.left_widget.height())
 
     def _restore_controls_state(self):
         if not self._prefs.get("controls_collapsed", False):
@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
         row.seek_requested.connect(self._on_track_seek)
         self._track_rows.append(row)
         self._tracks_layout.insertWidget(idx, row.left_widget)
-        self._panels_layout.insertWidget(idx, row.controls_panel)
+        self._panels_layout.insertWidget(idx, row.panel_cell)
         self._sync_heights()
 
         player = QMediaPlayer()
@@ -527,9 +527,9 @@ class MainWindow(QMainWindow):
         for row in self._track_rows:
             row.cleanup()
             self._tracks_layout.removeWidget(row.left_widget)
-            self._panels_layout.removeWidget(row.controls_panel)
+            self._panels_layout.removeWidget(row.panel_cell)
             row.left_widget.deleteLater()
-            row.controls_panel.deleteLater()
+            row.panel_cell.deleteLater()
             row.deleteLater()
         self._track_rows.clear()
         self._expanded_video_track = -1
@@ -828,9 +828,9 @@ class MainWindow(QMainWindow):
         row = self._track_rows.pop(track_idx)
         row.cleanup()
         self._tracks_layout.removeWidget(row.left_widget)
-        self._panels_layout.removeWidget(row.controls_panel)
+        self._panels_layout.removeWidget(row.panel_cell)
         row.left_widget.deleteLater()
-        row.controls_panel.deleteLater()
+        row.panel_cell.deleteLater()
         row.deleteLater()
         self._sync_heights()
         for i, r in enumerate(self._track_rows):
