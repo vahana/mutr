@@ -112,6 +112,8 @@ class _WaveformLoader(QThread):
 
 
 class _WaveformWidget(QWidget):
+    clicked = pyqtSignal(float)
+
     def __init__(self, color: QColor, parent=None):
         super().__init__(parent)
         self._color = color
@@ -126,6 +128,12 @@ class _WaveformWidget(QWidget):
     def set_playhead_ratio(self, ratio: float):
         self._playhead_ratio = max(0.0, min(1.0, ratio))
         self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.width() > 0:
+            ratio = max(0.0, min(1.0, event.position().x() / self.width()))
+            self.clicked.emit(ratio)
+        super().mousePressEvent(event)
 
     def paintEvent(self, _event):
         p = QPainter(self)
@@ -212,6 +220,7 @@ class TrackRow(QWidget):
     show_in_finder_requested = pyqtSignal(int)
     show_video_requested = pyqtSignal(int)
     video_resized = pyqtSignal(int)
+    seek_requested = pyqtSignal(int, float)
 
     _ROW_H = 52
     _DEFAULT_VIDEO_H = 480
@@ -243,6 +252,7 @@ class TrackRow(QWidget):
         self._name_edit = None
 
         self._waveform = _WaveformWidget(data.color)
+        self._waveform.clicked.connect(lambda ratio: self.seek_requested.emit(self._idx, ratio))
         layout.addWidget(self._waveform, stretch=1)
 
         is_video = Path(data.file).suffix.lower() in _VIDEO_EXTS

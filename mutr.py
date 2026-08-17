@@ -339,6 +339,7 @@ class MainWindow(QMainWindow):
         row.show_video_requested.connect(self._on_show_video_for_track)
         row.solo_requested.connect(self._on_solo)
         row.video_resized.connect(self._on_video_resized)
+        row.seek_requested.connect(self._on_track_seek)
         self._track_rows.append(row)
         self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
 
@@ -523,6 +524,14 @@ class MainWindow(QMainWindow):
         self._sync_seek(float(self._seek_slider.value()))
 
     # ── video ─────────────────────────────────────────────────────────────────
+
+    def _on_track_seek(self, _track_idx: int, ratio: float):
+        if not self._players:
+            return
+        dur = float(self._players[0][0].duration())
+        if dur <= 0:
+            return
+        self._sync_seek(ratio * dur)
 
     def _on_video_resized(self, height: int):
         self._prefs["video_height"] = height
