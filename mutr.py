@@ -12,23 +12,77 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QPoint, QSize, QTimer, QUrl
-from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QPointF, QSize, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QScrollArea, QSlider, QSizePolicy, QStackedWidget,
-    QStatusBar, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QSlider, QSizePolicy, QSplitter,
+    QSplitterHandle, QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from dialogs import PitchDialog, SplitDialog
-from loop_bar import LoopBar, SeekSlider, _ms_to_str
+from loop_bar import LoopBar, _ms_to_str
 from project import load_prefs, load_project, save_prefs, save_project, update_recent
 from track import TrackData, TrackRow, track_color
 
 _STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
 _VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+
+
+class _CollapseHandle(QSplitterHandle):
+    clicked = pyqtSignal()
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._collapsed = False
+
+    def sizeHint(self):
+        return QSize(5, 0)
+
+    def minimumSizeHint(self):
+        return QSize(5, 0)
+
+    def set_collapsed(self, collapsed: bool):
+        self._collapsed = collapsed
+        self.setToolTip("Show controls" if collapsed else "Hide controls")
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setPen(QPen(QColor(140, 140, 140), 1))
+        cx = self.width() / 2
+        for cy in (self.height() / 2 - 7, self.height() / 2 + 7):
+            if self._collapsed:
+                p.drawPolyline(QPointF(cx + 1.5, cy - 3), QPointF(cx - 1.5, cy), QPointF(cx + 1.5, cy + 3))
+            else:
+                p.drawPolyline(QPointF(cx - 1.5, cy - 3), QPointF(cx + 1.5, cy), QPointF(cx - 1.5, cy + 3))
+
+
+class _CollapsibleSplitter(QSplitter):
+    toggle_requested = pyqtSignal()
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._handle = None
+
+    def createHandle(self):
+        self._handle = _CollapseHandle(self.orientation(), self)
+        self._handle.clicked.connect(self.toggle_requested)
+        return self._handle
+
+    def set_collapsed_visual(self, collapsed: bool):
+        if self._handle is not None:
+            self._handle.set_collapsed(collapsed)
 
 
 class MainWindow(QMainWindow):
@@ -43,15 +97,18 @@ class MainWindow(QMainWindow):
         self._track_rows: list[TrackRow] = []
         self._current_project: Path | None = None
         self._prefs = load_prefs()
-        self._dragging = False
         self._pending_seek_ms: float = 0.0
         self._expanded_video_track: int = -1
         self._solo_track: int = -1
         self._pre_solo_mutes: list[bool] = []
         self._dirty: bool = False
+        self._controls_collapsed: bool = False
+        self._panel_width: int = 210
 
         self._build_ui()
         self._connect_signals()
+
+        QTimer.singleShot(100, self._restore_controls_state)
 
     # ── UI construction ───────────────────────────────────────────────────────
 
@@ -70,41 +127,48 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(0)
         outer.addWidget(self._stack, stretch=1)
 
-        self._seek_slider = SeekSlider(Qt.Orientation.Horizontal)
-        self._seek_slider.setRange(0, 0)
-        self._seek_slider.setEnabled(False)
-
-        self._loop_bar = LoopBar()
-        self._loop_bar.setEnabled(False)
-
-        bottom = QWidget()
-        self._bottom_layout = QVBoxLayout(bottom)
-        self._bottom_layout.setContentsMargins(0, 0, 0, 0)
-        self._bottom_layout.setSpacing(4)
-        self._bottom_layout.addWidget(self._seek_slider)
-        self._bottom_layout.addWidget(self._loop_bar)
-        outer.addWidget(bottom)
-
-        sb = self._tracks_scroll.verticalScrollBar()
-        sb.rangeChanged.connect(self._sync_bottom_margin)
-
         outer.addLayout(self._build_transport())
         self.setStatusBar(QStatusBar())
 
-    def _sync_bottom_margin(self, *_):
-        sb = self._tracks_scroll.verticalScrollBar()
-        sb_w = sb.width() if sb.maximum() > 0 else 0
-        left = 0
-        trailing = 0
-        if self._track_rows:
-            row = self._track_rows[0]
-            wave = row.waveform
-            tl = wave.mapTo(self._tracks_container, QPoint(0, 0))
-            left = tl.x()
-            trailing = self._tracks_container.width() - (tl.x() + wave.width())
-        self._bottom_layout.setContentsMargins(left, 0, trailing + sb_w, 0)
+    def _sync_heights(self):
+        for row in self._track_rows:
+            row.controls_panel.setFixedHeight(row.left_widget.height())
+
+    def _restore_controls_state(self):
+        if not self._prefs.get("controls_collapsed", False):
+            return
+        self._controls_collapsed = True
+        sizes = self._tracks_split.sizes()
+        if sizes[1] > 0:
+            self._panel_width = sizes[1]
+            self._tracks_split.setSizes([sum(sizes), 0])
+        self._tracks_split.set_collapsed_visual(True)
+
+    def _on_controls_toggle_requested(self):
+        sizes = self._tracks_split.sizes()
+        total = sum(sizes)
+        if sizes[1] > 0:
+            self._panel_width = sizes[1]
+            self._tracks_split.setSizes([total, 0])
+            self._controls_collapsed = True
+        else:
+            w = self._panel_width if self._panel_width > 0 else 210
+            self._tracks_split.setSizes([max(50, total - w), w])
+            self._controls_collapsed = False
+        self._tracks_split.set_collapsed_visual(self._controls_collapsed)
+        self._prefs["controls_collapsed"] = self._controls_collapsed
+        save_prefs(self._prefs)
 
     def _build_tracks_page(self) -> QWidget:
+        self._tracks_split = _CollapsibleSplitter(Qt.Orientation.Horizontal)
+        self._tracks_split.toggle_requested.connect(self._on_controls_toggle_requested)
+        self._tracks_split.setHandleWidth(5)
+
+        left_col = QWidget()
+        left_layout = QVBoxLayout(left_col)
+        left_layout.setSpacing(4)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
         self._tracks_scroll = QScrollArea()
         self._tracks_scroll.setWidgetResizable(True)
         self._tracks_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -114,7 +178,76 @@ class MainWindow(QMainWindow):
         self._tracks_layout.setContentsMargins(0, 0, 0, 0)
         self._tracks_layout.addStretch()
         self._tracks_scroll.setWidget(self._tracks_container)
-        return self._tracks_scroll
+        left_layout.addWidget(self._tracks_scroll, stretch=1)
+
+        self._loop_bar = LoopBar()
+        self._loop_bar.setEnabled(False)
+        loop_container = QWidget()
+        lc = QHBoxLayout(loop_container)
+        lc.setContentsMargins(4, 0, 0, 0)
+        lc.setSpacing(6)
+        swatch = QLabel("")
+        swatch.setFixedWidth(8)
+        swatch.setStyleSheet("background: #666666;")
+        lc.addWidget(swatch)
+        name_lbl = QLabel("Looper")
+        name_lbl.setFixedWidth(90)
+        lc.addWidget(name_lbl)
+        lc.addWidget(self._loop_bar, stretch=1)
+        self._tracks_layout.insertWidget(0, loop_container)
+
+        right_col = QWidget()
+        right_col.setMinimumWidth(0)
+        right_col.setStyleSheet("background: #f7f7f7;")
+        right_layout = QVBoxLayout(right_col)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self._panels_scroll = QScrollArea()
+        self._panels_scroll.setWidgetResizable(True)
+        self._panels_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._panels_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._panels_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        panels_container = QWidget()
+        panels_container.setStyleSheet("background: #f7f7f7;")
+        self._panels_layout = QVBoxLayout(panels_container)
+        self._panels_layout.setSpacing(2)
+        self._panels_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._loop_panel = QFrame()
+        self._loop_panel.setObjectName("controlsPanel")
+        self._loop_panel.setStyleSheet(
+            "QFrame#controlsPanel { background: #f7f7f7;"
+            " border: 1px solid #c8c8c8; border-radius: 4px; }")
+        self._loop_panel.setFixedHeight(LoopBar._BAR_H + LoopBar._LABEL_H)
+        lp = QHBoxLayout(self._loop_panel)
+        lp.setContentsMargins(5, 2, 5, 2)
+        lp.setSpacing(6)
+        self._loop_btn = QPushButton("🔁")
+        self._loop_btn.setCheckable(True)
+        self._loop_btn.setFixedSize(24, 24)
+        self._loop_btn.setToolTip("Loop")
+        self._loop_btn.setEnabled(False)
+        lp.addWidget(self._loop_btn)
+        lp.addStretch()
+        self._panels_layout.addWidget(self._loop_panel)
+
+        self._panels_layout.addStretch()
+        self._panels_scroll.setWidget(panels_container)
+        right_layout.addWidget(self._panels_scroll)
+
+        self._tracks_scroll.verticalScrollBar().valueChanged.connect(
+            self._panels_scroll.verticalScrollBar().setValue)
+
+        self._tracks_split.addWidget(left_col)
+        self._tracks_split.addWidget(right_col)
+        self._tracks_split.setStretchFactor(0, 1)
+        self._tracks_split.setStretchFactor(1, 0)
+        self._tracks_split.setCollapsible(0, False)
+        self._tracks_split.setCollapsible(1, True)
+        self._tracks_split.setSizes([700, 210])
+
+        return self._tracks_split
 
     def _build_welcome(self) -> QWidget:
         w = QWidget()
@@ -208,7 +341,6 @@ class MainWindow(QMainWindow):
 
     def _show_tracks_page(self):
         self._stack.setCurrentIndex(1)
-        self._seek_slider.setEnabled(True)
         self._loop_bar.setEnabled(True)
         self._play_btn.setEnabled(True)
         self._stop_btn.setEnabled(True)
@@ -256,13 +388,6 @@ class MainWindow(QMainWindow):
 
         self._time_lbl = QLabel("0:00 / 0:00")
         row.addWidget(self._time_lbl)
-        row.addSpacing(12)
-
-        self._loop_btn = QPushButton("Loop")
-        self._loop_btn.setCheckable(True)
-        self._loop_btn.setFixedWidth(52)
-        self._loop_btn.setEnabled(False)
-        row.addWidget(self._loop_btn)
 
         row.addStretch()
 
@@ -307,8 +432,6 @@ class MainWindow(QMainWindow):
         self._speed_btn_up.clicked.connect(lambda: self._on_speed_step(10))
         self._speed_btn_max.clicked.connect(lambda: self._on_speed_step(100))
         self._master_vol.valueChanged.connect(self._on_master_volume)
-        self._seek_slider.sliderPressed.connect(lambda: setattr(self, "_dragging", True))
-        self._seek_slider.sliderReleased.connect(self._on_seek_released)
         self._loop_bar.seek_requested.connect(self._sync_seek)
         self._loop_bar.segment_selected.connect(self._on_segment_selected)
         self._loop_bar.markers_changed.connect(self._on_markers_changed)
@@ -324,6 +447,7 @@ class MainWindow(QMainWindow):
             ("Down", lambda: self._seek_to_segment(1)),
             ("D", self._delete_nearest_marker),
             ("V", self._toggle_video),
+            ("C", self._on_controls_toggle_requested),
         ]
         for key, slot in shortcuts:
             sc = QShortcut(QKeySequence(key), self)
@@ -349,7 +473,9 @@ class MainWindow(QMainWindow):
         row.video_resized.connect(self._on_video_resized)
         row.seek_requested.connect(self._on_track_seek)
         self._track_rows.append(row)
-        self._tracks_layout.insertWidget(self._tracks_layout.count() - 1, row)
+        self._tracks_layout.insertWidget(idx, row.left_widget)
+        self._panels_layout.insertWidget(idx, row.controls_panel)
+        self._sync_heights()
 
         player = QMediaPlayer()
         audio_out = QAudioOutput()
@@ -383,11 +509,8 @@ class MainWindow(QMainWindow):
 
         if idx == 0:
             self._show_tracks_page()
-            self._seek_slider.setEnabled(True)
             self._loop_bar.setEnabled(True)
             self._loop_btn.setEnabled(True)
-
-        QTimer.singleShot(0, self._sync_bottom_margin)
 
     def _clear_tracks(self):
         if self._players:
@@ -403,12 +526,13 @@ class MainWindow(QMainWindow):
         self._tracks.clear()
         for row in self._track_rows:
             row.cleanup()
-            self._tracks_layout.removeWidget(row)
+            self._tracks_layout.removeWidget(row.left_widget)
+            self._panels_layout.removeWidget(row.controls_panel)
+            row.left_widget.deleteLater()
+            row.controls_panel.deleteLater()
             row.deleteLater()
         self._track_rows.clear()
         self._expanded_video_track = -1
-        self._seek_slider.setRange(0, 0)
-        self._seek_slider.setEnabled(False)
         self._loop_bar.set_total(0.0)
         self._loop_bar.set_markers([])
         self._loop_bar.set_active_segment(-1)
@@ -422,7 +546,6 @@ class MainWindow(QMainWindow):
         self._pre_solo_mutes = []
         self._dirty = False
         self._stack.setCurrentIndex(0)
-        QTimer.singleShot(0, self._sync_bottom_margin)
 
     # ── playback sync ─────────────────────────────────────────────────────────
 
@@ -483,8 +606,6 @@ class MainWindow(QMainWindow):
     # ── player event handlers ─────────────────────────────────────────────────
 
     def _on_position(self, pos_ms: int):
-        if self._dragging:
-            return
         ms = float(pos_ms)
 
         if self._loop_btn.isChecked():
@@ -494,9 +615,6 @@ class MainWindow(QMainWindow):
                 return
 
         self._loop_bar.set_playhead(ms)
-        self._seek_slider.blockSignals(True)
-        self._seek_slider.setValue(pos_ms)
-        self._seek_slider.blockSignals(False)
         dur = float(self._players[0][0].duration())
         self._time_lbl.setText(f"{_ms_to_str(ms)} / {_ms_to_str(dur)}")
 
@@ -505,7 +623,6 @@ class MainWindow(QMainWindow):
             row.set_playhead_ratio(ratio)
 
     def _on_duration(self, dur_ms: int):
-        self._seek_slider.setRange(0, dur_ms)
         self._loop_bar.set_total(float(dur_ms))
 
     def _on_play_state(self, state):
@@ -530,10 +647,6 @@ class MainWindow(QMainWindow):
             else:
                 self._stop()
 
-    def _on_seek_released(self):
-        self._dragging = False
-        self._sync_seek(float(self._seek_slider.value()))
-
     # ── video ─────────────────────────────────────────────────────────────────
 
     def _on_track_seek(self, _track_idx: int, ratio: float):
@@ -547,6 +660,7 @@ class MainWindow(QMainWindow):
     def _on_video_resized(self, height: int):
         self._prefs["video_height"] = height
         save_prefs(self._prefs)
+        self._sync_heights()
 
     def _toggle_video(self):
         for i, row in enumerate(self._track_rows):
@@ -558,6 +672,8 @@ class MainWindow(QMainWindow):
         if self._expanded_video_track == track_idx:
             self._track_rows[track_idx].set_video_visible(False)
             self._expanded_video_track = -1
+            self._sync_heights()
+            self._persist_ui_state()
             return
 
         if self._expanded_video_track >= 0 and self._expanded_video_track < len(self._track_rows):
@@ -568,11 +684,18 @@ class MainWindow(QMainWindow):
         p.setVideoOutput(row.video_widget)
         row.set_video_visible(True)
         self._expanded_video_track = track_idx
+        self._sync_heights()
+        self._persist_ui_state()
+
+    def _persist_ui_state(self):
+        if self._current_project is not None:
+            self._write_project(self._current_project)
 
     # ── loop / segment ────────────────────────────────────────────────────────
 
     def _on_loop_toggled(self, on: bool):
         self._loop_bar.set_loop_active(on)
+        self._loop_btn.setStyleSheet("background: #7a6a00; color: #ffe066;" if on else "")
         self._dirty = True
 
     def _on_markers_changed(self, markers: list):
@@ -704,8 +827,12 @@ class MainWindow(QMainWindow):
         del self._tracks[track_idx]
         row = self._track_rows.pop(track_idx)
         row.cleanup()
-        self._tracks_layout.removeWidget(row)
+        self._tracks_layout.removeWidget(row.left_widget)
+        self._panels_layout.removeWidget(row.controls_panel)
+        row.left_widget.deleteLater()
+        row.controls_panel.deleteLater()
         row.deleteLater()
+        self._sync_heights()
         for i, r in enumerate(self._track_rows):
             r._idx = i
         if self._solo_track == track_idx:
@@ -719,7 +846,6 @@ class MainWindow(QMainWindow):
             self._expanded_video_track = -1
         elif self._expanded_video_track > track_idx:
             self._expanded_video_track -= 1
-        QTimer.singleShot(0, self._sync_bottom_margin)
         if delete_file:
             try:
                 Path(file_path).unlink(missing_ok=True)
@@ -1066,6 +1192,7 @@ class MainWindow(QMainWindow):
             ("↑ ↓", "Previous / next segment"),
             ("D", "Delete nearest marker"),
             ("V", "Toggle video (first video track)"),
+            ("C", "Show/hide controls panel"),
             ("Double-click loop bar", "Add marker (snaps to second)"),
             ("Double-click marker", "Remove that marker"),
             ("Drag marker", "Move marker"),
@@ -1113,11 +1240,6 @@ class MainWindow(QMainWindow):
         elif reply == QMessageBox.StandardButton.Discard:
             return True
         return False
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, "_bottom_layout"):
-            self._sync_bottom_margin()
 
     def closeEvent(self, event):
         if not self._maybe_save():
