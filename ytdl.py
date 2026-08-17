@@ -12,10 +12,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-_FORMATS = ("bestvideo[vcodec!^=av01][height<=1080]+bestaudio"
-            "/bestvideo[height<=1080]+bestaudio"
-            "/best[height<=1080]/best")
-
 
 def _fetch_title(yt_dlp: str, url: str) -> str:
     try:
@@ -38,6 +34,16 @@ def main() -> int:
         "output", nargs="?",
         help="output path (default: ~/Downloads/<title>.mkv)",
     )
+    parser.add_argument(
+        "-q", "--quality", type=int,
+        choices=[144, 240, 360, 480, 720, 1080, 1440, 2160],
+        default=1080,
+        help="max video height (default: 1080)",
+    )
+    parser.add_argument(
+        "-a", "--audio-only", action="store_true",
+        help="download audio only",
+    )
     args = parser.parse_args()
 
     yt_dlp = shutil.which("yt-dlp")
@@ -45,21 +51,28 @@ def main() -> int:
         print("yt-dlp not found — install with: brew install yt-dlp", file=sys.stderr)
         return 1
 
+    if args.audio_only:
+        formats = "bestaudio/best"
+    else:
+        formats = (f"bestvideo[vcodec!^=av01][height<={args.quality}]+bestaudio"
+                   f"/bestvideo[height<={args.quality}]+bestaudio"
+                   f"/best[height<={args.quality}]/best")
+
     if args.output:
         out_path = args.output
     else:
         title = _fetch_title(yt_dlp, args.url)
         safe = "".join(c if c.isalnum() or c in " -_()" else "_" for c in title).strip()
-        out_path = str(Path.home() / "Downloads" / f"{safe}.mkv")
+        ext = "%(ext)s" if args.audio_only else "mkv"
+        out_path = str(Path.home() / "Downloads" / f"{safe}.{ext}")
 
-    result = subprocess.run(
-        [yt_dlp, args.url,
-         "-f", _FORMATS,
-         "--merge-output-format", "mkv",
-         "--cookies-from-browser", "chrome",
-         "-o", out_path],
-    )
-    return result.returncode
+    cmd = [yt_dlp, args.url,
+           "-f", formats,
+           "--cookies-from-browser", "chrome",
+           "-o", out_path]
+    if not args.audio_only:
+        cmd += ["--merge-output-format", "mkv"]
+    return subprocess.run(cmd).returncode
 
 
 if __name__ == "__main__":

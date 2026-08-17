@@ -36,10 +36,10 @@ Projects are stored in `~/.mutr/projects/`.
 Separate CLI utility:
 
 ```bash
-./ytdl.py <url> [output_path]
+./ytdl.py <url> [output_path] [-q {144,240,360,480,720,1080,1440,2160}] [-a]
 ```
 
-Output defaults to `~/Downloads/<title>.mkv`. Requires yt-dlp (`brew install yt-dlp`).
+Output defaults to `~/Downloads/<title>.mkv`. `-q` caps video height (default 1080), `-a` downloads audio only. Requires yt-dlp (`brew install yt-dlp`).
 
 ## Shortcuts
 
