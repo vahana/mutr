@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QMenu, QSlider, QStyle, QToolTip, QWidget
 
@@ -51,9 +51,12 @@ class LoopBar(QWidget):
         (QColor(100, 65, 25), QColor(155, 105, 45)),
     ]
 
+    _BAR_H = 20
+    _LABEL_H = 16
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(20)
+        self.setFixedHeight(self._BAR_H + self._LABEL_H)
         self._total_ms = 0.0
         self._markers: list[float] = []
         self._active_segment = -1
@@ -196,6 +199,7 @@ class LoopBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
+        bar_h = self._BAR_H
         all_m = [0.0] + self._markers + [self._total_ms]
 
         p.fillRect(0, 0, w, h, QColor(28, 28, 28))
@@ -204,17 +208,27 @@ class LoopBar(QWidget):
             x0 = int(self._ms_to_x(all_m[i]))
             x1 = int(self._ms_to_x(all_m[i + 1]))
             inactive, active = self._SEG_COLORS[i % len(self._SEG_COLORS)]
-            p.fillRect(x0 + 1, 1, x1 - x0 - 1, h - 2,
+            p.fillRect(x0 + 1, 1, x1 - x0 - 1, bar_h - 2,
                        active if i == self._active_segment else inactive)
 
         if not self._loop_active:
-            p.fillRect(0, 1, w, h - 2, QColor(0, 0, 0, 110))
+            p.fillRect(0, 1, w, bar_h - 2, QColor(0, 0, 0, 110))
 
         p.setPen(QPen(QColor(200, 200, 200, 200), 1))
         for m in self._markers:
             x = int(self._ms_to_x(m))
-            p.drawLine(x, 0, x, h)
+            p.drawLine(x, 0, x, bar_h)
 
         ph_x = int(self._ms_to_x(self._playhead_ms))
         p.setPen(QPen(QColor(255, 60, 60), 1))
-        p.drawLine(ph_x, 0, ph_x, h)
+        p.drawLine(ph_x, 0, ph_x, bar_h)
+
+        p.fillRect(0, bar_h, w, self._LABEL_H, QColor(22, 22, 22))
+        font = p.font()
+        font.setPointSize(9)
+        p.setFont(font)
+        p.setPen(QColor(170, 170, 170))
+        for m in self._markers:
+            x = int(self._ms_to_x(m))
+            p.drawText(QRect(x - 30, bar_h, 60, self._LABEL_H),
+                       Qt.AlignmentFlag.AlignCenter, _ms_to_str(m))

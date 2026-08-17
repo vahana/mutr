@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
             ("L", self._loop_btn.toggle),
             ("Left", lambda: self._seek_by_seconds(-1)),
             ("Right", lambda: self._seek_by_seconds(1)),
-            ("Up", lambda: self._seek_to_segment(-1)),
+            ("Up", self._seek_prev_segment),
             ("Down", lambda: self._seek_to_segment(1)),
             ("D", self._delete_nearest_marker),
             ("V", self._toggle_video),
@@ -601,6 +601,26 @@ class MainWindow(QMainWindow):
         bounds = self._loop_bar.get_segment_bounds(idx)
         if bounds:
             self._sync_seek(bounds[0])
+
+    def _seek_prev_segment(self):
+        markers = self._loop_bar._markers
+        n_segs = len(markers) + 1
+        if n_segs < 2 or not self._players:
+            return
+        total = float(self._players[0][0].duration())
+        pos = self._current_pos()
+        all_m = [0.0] + markers + [total]
+        cur = max(0, len(all_m) - 2)
+        for i in range(len(all_m) - 1):
+            if all_m[i] <= pos < all_m[i + 1]:
+                cur = i
+                break
+        if pos - all_m[cur] > 1000.0:
+            target = cur
+        else:
+            target = max(0, cur - 1)
+        self._loop_bar.set_active_segment(target)
+        self._sync_seek(all_m[target])
 
     def _delete_nearest_marker(self):
         markers = list(self._loop_bar._markers)
