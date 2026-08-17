@@ -276,7 +276,7 @@ class TrackRow(QWidget):
         self._vol_slider = QSlider(Qt.Orientation.Horizontal)
         self._vol_slider.setRange(0, 100)
         self._vol_slider.setValue(int(data.volume * 100))
-        self._vol_slider.setFixedWidth(90)
+        self._vol_slider.setFixedWidth(60 if is_video else 90)
         self._vol_slider.valueChanged.connect(self._on_volume)
         layout.addWidget(self._vol_slider)
 

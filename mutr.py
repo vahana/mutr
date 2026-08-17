@@ -73,14 +73,28 @@ class MainWindow(QMainWindow):
         self._seek_slider = SeekSlider(Qt.Orientation.Horizontal)
         self._seek_slider.setRange(0, 0)
         self._seek_slider.setEnabled(False)
-        outer.addWidget(self._seek_slider)
 
         self._loop_bar = LoopBar()
         self._loop_bar.setEnabled(False)
-        outer.addWidget(self._loop_bar)
+
+        bottom = QWidget()
+        self._bottom_layout = QVBoxLayout(bottom)
+        self._bottom_layout.setContentsMargins(0, 0, 0, 0)
+        self._bottom_layout.setSpacing(4)
+        self._bottom_layout.addWidget(self._seek_slider)
+        self._bottom_layout.addWidget(self._loop_bar)
+        outer.addWidget(bottom)
+
+        sb = self._tracks_scroll.verticalScrollBar()
+        sb.rangeChanged.connect(self._sync_bottom_margin)
 
         outer.addLayout(self._build_transport())
         self.setStatusBar(QStatusBar())
+
+    def _sync_bottom_margin(self, *_):
+        sb = self._tracks_scroll.verticalScrollBar()
+        right = sb.width() if sb.maximum() > 0 else 0
+        self._bottom_layout.setContentsMargins(0, 0, right, 0)
 
     def _build_tracks_page(self) -> QWidget:
         self._tracks_scroll = QScrollArea()
