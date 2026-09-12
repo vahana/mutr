@@ -1,0 +1,12 @@
+[project]
+name = "mutr"
+version = "1.0.0"
+requires-python = "==3.13.*"
+dependencies = [
+    "PyQt6>=6.6.0",
+    "yt-dlp>=2026.8.19",
+    "mutr-core",
+]
+
+[tool.uv.sources]
+mutr-core = { path = "../mutr_core", editable = true }

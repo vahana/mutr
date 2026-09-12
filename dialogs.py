@@ -6,7 +6,9 @@ from PyQt6.QtWidgets import (
     QMessageBox, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
 )
 
-from workers import PitchWorker, StemWorker, _AUDIO_EXTS
+from mutr_core.pitch import pitch_path
+from mutr_core.stems import MODELS as _MODELS
+from workers import PitchWorker, StemWorker
 
 
 class PitchDialog(QDialog):
@@ -69,11 +71,7 @@ class PitchDialog(QDialog):
             self.accept()
             return
 
-        is_audio = Path(self._src).suffix.lower() in _AUDIO_EXTS
-        ext = ".wav" if is_audio else Path(self._src).suffix
-        out_path = str(
-            Path(self._src).parent / f"{Path(self._src).stem}_pitch{self._pitch:+d}{ext}"
-        )
+        out_path = str(pitch_path(Path(self._src), self._pitch))
 
         self._apply_btn.setEnabled(False)
         self._progress.setVisible(True)
@@ -100,14 +98,6 @@ class PitchDialog(QDialog):
             self._worker.cancel()
             self._worker.wait()
         super().closeEvent(event)
-
-
-_MODELS = [
-    ("htdemucs",      "Demucs (4 stems, default)"),
-    ("htdemucs_ft",   "Demucs Fine-Tuned (4 stems, higher quality)"),
-    ("htdemucs_6s",   "Demucs 6-Stem (vocals, drums, bass, guitar, piano, other)"),
-    ("mdx_extra_q",   "MDX Extra (best vocal separation)"),
-]
 
 
 class SplitDialog(QDialog):

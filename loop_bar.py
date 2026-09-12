@@ -1,3 +1,9 @@
+from mutr_core.segments import (
+    get_segment_bounds as _core_bounds,
+    nearest_marker as _core_nearest,
+    segment_at as _core_segment_at,
+    snap_to_second as _core_snap,
+)
 from PyQt6.QtCore import QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QMenu, QSlider, QStyle, QToolTip, QWidget
@@ -86,15 +92,10 @@ class LoopBar(QWidget):
         self.update()
 
     def get_segment_bounds(self, idx: int) -> tuple[float, float] | None:
-        if idx < 0:
-            return None
-        all_m = [0.0] + self._markers + [self._total_ms]
-        if idx >= len(all_m) - 1:
-            return None
-        return all_m[idx], all_m[idx + 1]
+        return _core_bounds(self._markers, self._total_ms, idx)
 
     def _snap(self, ms: float) -> float:
-        return round(ms / 1000.0) * 1000.0
+        return _core_snap(ms)
 
     def _ms_to_x(self, ms: float) -> float:
         if self._total_ms <= 0:
@@ -107,18 +108,12 @@ class LoopBar(QWidget):
         return max(0.0, min(self._total_ms, x / self.width() * self._total_ms))
 
     def _marker_near(self, x: float) -> int:
-        for i, m in enumerate(self._markers):
-            if abs(self._ms_to_x(m) - x) <= 12:
-                return i
-        return -1
+        radius_ms = (12.0 / max(1, self.width())) * self._total_ms
+        i = _core_nearest(self._markers, self._x_to_ms(x), radius_ms)
+        return -1 if i is None else i
 
     def _segment_at_x(self, x: float) -> int:
-        ms = self._x_to_ms(x)
-        all_m = [0.0] + self._markers + [self._total_ms]
-        for i in range(len(all_m) - 1):
-            if all_m[i] <= ms < all_m[i + 1]:
-                return i
-        return max(0, len(all_m) - 2)
+        return _core_segment_at(self._markers, self._total_ms, self._x_to_ms(x))
 
     def mousePressEvent(self, event):
         if self._total_ms <= 0:

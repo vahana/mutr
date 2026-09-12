@@ -1,10 +1,4 @@
 #!/usr/bin/env -S uv run
-# /// script
-# requires-python = "==3.13.*"
-# dependencies = [
-#   "PyQt6>=6.6.0",
-# ]
-# ///
 
 import os
 import shutil
@@ -12,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from mutr_core.media import ALLOWED_EXTS, VIDEO_EXTS as _VIDEO_EXTS
+from mutr_core.paths import unique_name
+from mutr_core.stems import STEM_ORDER as _STEM_ORDER
 from PyQt6.QtCore import Qt, QPointF, QSize, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QPen, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
@@ -26,9 +23,6 @@ from dialogs import PitchDialog, SplitDialog
 from loop_bar import LoopBar, _ms_to_str
 from project import load_prefs, load_project, save_prefs, save_project, update_recent
 from track import TrackData, TrackRow, track_color
-
-_STEM_ORDER = ["vocals", "drums", "bass", "guitar", "piano", "other"]
-_VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 
 
 class _CollapseHandle(QSplitterHandle):
@@ -999,12 +993,8 @@ class MainWindow(QMainWindow):
         self._clear_tracks()
         projects_dir = Path.home() / ".mutr" / "projects"
         projects_dir.mkdir(parents=True, exist_ok=True)
-        name = "New Project"
+        name = unique_name("New Project", {p.name for p in projects_dir.iterdir() if p.is_dir()})
         proj_dir = projects_dir / name
-        counter = 1
-        while proj_dir.exists():
-            proj_dir = projects_dir / f"New Project {counter}"
-            counter += 1
         proj_dir.mkdir(parents=True)
         self._current_project = proj_dir / f"{name}.mutrproj"
         self.setWindowTitle(f"mutr — {proj_dir.name}")
@@ -1206,10 +1196,9 @@ class MainWindow(QMainWindow):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        audio_exts = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".flac", ".m4a", ".ogg"}
         for url in event.mimeData().urls():
             path = url.toLocalFile()
-            if Path(path).suffix.lower() in audio_exts:
+            if Path(path).suffix.lower() in ALLOWED_EXTS:
                 path = self._copy_to_project(path)
                 idx = len(self._tracks)
                 name = Path(path).stem

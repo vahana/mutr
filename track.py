@@ -1,9 +1,10 @@
-import array
-import subprocess
 import threading
-from dataclasses import dataclass, field
 from pathlib import Path
 
+from mutr_core.color import track_color as _core_track_color
+from mutr_core.media import VIDEO_EXTS as _VIDEO_EXTS
+from mutr_core.project import TrackData
+from mutr_core.waveform import extract_peaks
 from PyQt6.QtCore import QPoint, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -12,101 +13,38 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-_TRACK_COLORS = [
-    QColor(60, 110, 170),
-    QColor(110, 70, 155),
-    QColor(60, 140, 100),
-    QColor(155, 105, 45),
-    QColor(140, 60, 60),
-    QColor(60, 120, 140),
-]
-
 
 def track_color(idx: int) -> QColor:
-    return _TRACK_COLORS[idx % len(_TRACK_COLORS)]
-
-
-@dataclass
-class TrackData:
-    name: str
-    file: str
-    source_file: str
-    volume: float = 1.0
-    muted: bool = False
-    pitch_baked: int = 0
-    color: QColor = field(default_factory=lambda: QColor(60, 110, 170))
-
-    def to_dict(self) -> dict:
-        return {
-            "name": self.name,
-            "file": self.file,
-            "source_file": self.source_file,
-            "volume": self.volume,
-            "muted": self.muted,
-            "pitch_baked": self.pitch_baked,
-        }
-
-    @staticmethod
-    def from_dict(d: dict, color: QColor) -> "TrackData":
-        return TrackData(
-            name=d["name"],
-            file=d["file"],
-            source_file=d["source_file"],
-            volume=d.get("volume", 1.0),
-            muted=d.get("muted", False),
-            pitch_baked=d.get("pitch_baked", 0),
-            color=color,
-        )
+    rgb = _core_track_color(idx)
+    return QColor(*rgb)
 
 
 class _WaveformLoader(QThread):
     ready = pyqtSignal(list)
 
-    _N_SAMPLES = 400
-    _RATE = 4000
-
     def __init__(self, path: str):
         super().__init__()
         self._path = path
         self._lock = threading.Lock()
-        self._proc = None
         self._stopped = False
+        self._cancel = threading.Event()
 
     def stop(self):
         with self._lock:
             self._stopped = True
-            if self._proc is not None:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
+        self._cancel.set()
 
     def run(self):
         try:
             with self._lock:
                 if self._stopped:
                     return
-                self._proc = subprocess.Popen(
-                    ["ffmpeg", "-i", self._path,
-                     "-f", "f32le", "-ac", "1", "-ar", str(self._RATE),
-                     "-vn", "pipe:1"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                )
-            stdout, _ = self._proc.communicate()
-            if self._stopped or self._proc.returncode != 0 or not stdout:
-                return
-            data = array.array("f", stdout)
-            chunk = max(1, len(data) // self._N_SAMPLES)
-            peaks = []
-            for i in range(0, len(data), chunk):
-                block = data[i:i + chunk]
-                if block:
-                    peaks.append(max(abs(v) for v in block))
-            peak = max(peaks) if peaks else 1.0
-            if peak > 0:
-                peaks = [v / peak for v in peaks]
-            self.ready.emit(peaks[:self._N_SAMPLES])
+            peaks = extract_peaks(self._path, cancel=self._cancel)
+            with self._lock:
+                if self._stopped:
+                    return
+            if peaks:
+                self.ready.emit(peaks)
         except Exception:
             pass
 
@@ -169,9 +107,6 @@ class _ColorSwatch(QWidget):
     def paintEvent(self, _event):
         p = QPainter(self)
         p.fillRect(self.rect(), self._color)
-
-
-_VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 
 
 class _ResizeHandle(QWidget):
